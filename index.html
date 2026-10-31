@@ -271,7 +271,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.6';
+const VERSION = 'v0.7';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -307,8 +307,8 @@ const I18N = {
     res: 'Resolution {w}×{h}', fps: ' at {f} fps', noCtl: ' This browser cannot set exposure or focus (Safari on iPhone, for example).',
     exposure: 'Exposure', iso: 'ISO', focus: 'Focus', zoom: 'Zoom', sport: 'Sport mode (1 ms)', torch: 'Torch', refused: 'Setting refused: ',
     lensFail: 'This lens could not be opened', fpsNow: '{f} frames/s processed', langTo: 'Language: English. Switch to French',
-    noTurn: ['Keep turning', 'Full turn not recognised yet. Check that the frame covers the label only.'], install: 'Install the app',
-    match: 'match', partialSaved: 'Scan stopped: the raw panorama is in the register', partial: 'incomplete'
+    noTurn: ['Keep turning', 'Full turn not recognised yet. If the label has gone all the way round, press Stop: the app will finish from what it captured.'], install: 'Install the app',
+    match: 'match', finishing: 'Finishing…', partialSaved: 'Scan stopped: the raw panorama is in the register', partial: 'incomplete'
   },
   fr: {
     tag: "Scan des étiquettes de fioles d'anticorps", start: 'Scanner', settings: 'Paramètres', register: 'Registre', close: 'Fermer',
@@ -332,8 +332,8 @@ const I18N = {
     res: 'Résolution {w}×{h}', fps: ' à {f} i/s', noCtl: " Ce navigateur ne permet pas de régler l'exposition ni la mise au point (c'est le cas de Safari sur iPhone).",
     exposure: 'Exposition', iso: 'ISO', focus: 'Mise au point', zoom: 'Zoom', sport: 'Mode sport (1 ms)', torch: 'Lampe', refused: 'Réglage refusé : ',
     lensFail: "Impossible d'ouvrir cet objectif", fpsNow: '{f} images/s traitées', langTo: 'Langue : français. Passer en anglais',
-    noTurn: ['Continuez de tourner', "Tour complet pas encore reconnu. Vérifiez que le cadre ne couvre que l'étiquette."], install: "Installer l'app",
-    match: 'raccord', partialSaved: 'Scan arrêté : le panorama brut est dans le registre', partial: 'incomplet'
+    noTurn: ['Continuez de tourner', "Tour complet pas encore reconnu. Si l'étiquette a fait tout le tour, appuyez sur Stop : l'app finira avec ce qu'elle a capturé."], install: "Installer l'app",
+    match: 'raccord', finishing: 'Finalisation…', partialSaved: 'Scan arrêté : le panorama brut est dans le registre', partial: 'incomplet'
   }
 };
 const prefs = Object.assign({ sens: 25, autoNext: true, lang: 'en', lens: null }, store.get('prefs', {}));
@@ -602,10 +602,8 @@ $('btnRun').onclick = () => {
     store.set('roi', roi); setupCrop();
     if (source.kind === 'file'){ startEngine(); stepFile(0); return; }   // vidéo de test : pas de détection du socle
     det.bg = null; det.bgFrames = 0; det.occ = false; det.n = 0; setState('wait');
-  } else {
-    if (state === 'scan' && engine) savePartial();
-    engine = null; setState('zone');
-  }
+  } else if (state === 'scan' && engine) stopScan();
+  else { engine = null; setState('zone'); }
 };
 
 /* Lecture de la zone. On découpe la zone dans l'image vidéo AVANT d'en copier les pixels (createImageBitmap) :
@@ -659,7 +657,7 @@ function scanFrame(px){
   const r = engine.push(px);
   drawProgress(r);
   if (r.tooFast) setStatus(...t('tooFast'));
-  else if (r.frames % 10 === 0) setStatus(...t(!r.period && r.extent > 12 * W ? 'noTurn' : 'scan'));
+  else if (r.frames % 10 === 0) setStatus(...t(!r.period && r.extent > 8 * W ? 'noTurn' : 'scan'));
   if (r.done) finish();
 }
 // avant le tour complet, on estime l'avancée d'après la longueur du panorama (au plus 60 %) ; ensuite, couverture réelle du tour
@@ -688,10 +686,19 @@ async function finish(){
   if (source.kind === 'file' || !prefs.autoNext){ setState('zone', t('again')); return; }
   setState('done');
 }
-// scan arrêté avant la fin : on garde le panorama brut dans le registre, pour voir ce qui a coincé
-async function savePartial(){
-  if (engine.umax - engine.umin < 2 * W) return;
-  const canvas = engine.panorama();
+// Stop pendant le scan : si le panorama est assez long, on cherche le tour dans le panorama lui-même
+// et on termine normalement ; sinon on garde le panorama brut dans le registre, pour voir ce qui a coincé
+async function stopScan(){
+  const e = engine; engine = null;
+  setStatus(t('finishing'), '');
+  await new Promise(r => setTimeout(r, 50));   // laisse le message s'afficher avant le calcul
+  const P = e.umax - e.umin > 2.5 * W ? e.periodFromPanorama() : 0;
+  if (P){ e.period = P; engine = e; finish(); return; }
+  setState('zone'); savePartial(e);
+}
+async function savePartial(e){
+  if (e.umax - e.umin < 2 * W) return;
+  const canvas = e.panorama();
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
   try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, partial: true }); renderRegister(); toast(t('partialSaved')); }
   catch (e){ toast(t('saveFail') + e.message); }

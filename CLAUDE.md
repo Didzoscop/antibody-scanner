@@ -109,7 +109,17 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
      (> 2 largeurs de zone) confirment le tour, et seul un pic hors de ces multiples compte comme concurrent.
      La période retenue est le plus petit écart. Testé sur une rotation simulée de 2,7 tours (texture de
      l'étiquette réelle) : période 574 pour 573.
-   - Comparer le panorama à lui-même ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
+   - **Secours à l'arrêt** (`periodFromPanorama`) : malgré tout ça, l'utilisateur restait bloqué à 60 % avec
+     un panorama brut correct. Quand on appuie sur Stop, l'app compare le panorama à lui-même décalé de P
+     colonnes, en **niveaux de gris** (Pearson) et non en gradient : le pic est large de quelques colonnes,
+     alors que sur le gradient il tient sur une seule colonne et se perd. Validé si r ≥ 0,4 et r − médiane
+     de la courbe ≥ 0,15 ; on prend le plus petit pic à 85 % du meilleur (un tour, pas deux).
+     Vidéo de test : 586 px (r 0,66, médiane 0,44) ; simulations 1,4 et 3,2 tours : 573 et 574 pour 573 ;
+     panorama de moins d'un tour : refusé. ~0,1 à 0,6 s sur PC. Si rien n'est trouvé, le panorama brut est
+     gardé (« incomplet »).
+   - Le service worker revalide chaque fichier (`cache: 'no-cache'`) : sinon le cache HTTP de GitHub Pages
+     pouvait servir l'ancien engine.js pendant 10 minutes après un push.
+   - Comparer le panorama à lui-même en gradient ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
      panorama donne 0,56.
 5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
    Le scan se termine dès qu'il ne reste que des trous de 4 colonnes au plus sur le tour (en pratique,

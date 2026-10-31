@@ -172,14 +172,14 @@ class ScanEngine{
     // Ces pics-là, espacés d'un multiple du même tour, confirment le tour au lieu de le contredire.
     const close = peaks.filter(p => p.c > top.c - this.minGap);
     const P = close.reduce((m, p) => p.d > 2 * W && p.d < m ? p.d : m, Infinity);
-    const periodic = p => { const k = Math.max(1, Math.round(p.d / P)); return Math.abs(p.d - k * P) <= Math.max(6, .02 * p.d); };
+    const periodic = p => { const k = Math.max(1, Math.round(p.d / P)); return Math.abs(p.d - k * P) <= Math.max(6, .04 * p.d); };
     const second = peaks.filter(p => !(P < Infinity && periodic(p))).reduce((m, p) => p.c > m ? p.c : m, -1);
     this.trace.push({ frame: this.frames, c: +top.c.toFixed(3), second: +second.toFixed(3), P: P < Infinity ? P : 0 });   // pour le diagnostic
     if (this.trace.length > 50) this.trace.shift();
     // le vrai raccord se détache nettement de tout candidat qui n'est pas un multiple du tour (écart ≥ 0,12)
     if (P === Infinity || top.c < this.minC || top.c - second < this.minGap) return;
     // il faut deux détections concordantes parmi les dernières pour valider le tour
-    const agree = this.closures.slice(-4).filter(q => Math.abs(q - P) <= 4);
+    const agree = this.closures.slice(-4).filter(q => Math.abs(q - P) <= Math.max(4, .01 * P));
     this.closures.push(P);
     if (agree.length) this.period = Math.round((agree[agree.length - 1] + P) / 2);
   }
@@ -249,6 +249,42 @@ class ScanEngine{
     }
     canvas.getContext('2d').putImageData(img, 0, 0);
     return { canvas, junction };
+  }
+
+  // Secours quand le tour n'a pas été reconnu en direct : on cherche la circonférence dans le panorama lui-même,
+  // en le comparant à lui-même décalé de P colonnes. Ici on corrèle les niveaux de gris (corrélation de Pearson),
+  // pas le gradient : le pic est plus large (quelques colonnes) et ne se perd pas entre deux essais.
+  // Recherche un P sur deux puis affinage. Environ 0,3 s sur PC pour 3 tours. Renvoie la période, ou 0.
+  periodFromPanorama(){
+    const { W, H2, gm, filled, umin, umax } = this, R = 4, ys = [];
+    for (let y = R + 2; y < H2 - R - 2; y += 4) ys.push(y);
+    const minN = 1.5 * W / 3 * ys.length;   // recouvrement d'au moins 1,5 largeur de zone
+    const corr = P => {
+      let best = -1;
+      for (let dy = -R; dy <= R; dy++){
+        let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, n = 0;
+        for (let u = umin; u + P <= umax; u += 3){
+          if (!filled[u] || !filled[u + P]) continue;
+          const a0 = u * H2, b0 = (u + P) * H2 + dy;
+          for (const y of ys){ const a = gm[a0 + y], b = gm[b0 + y]; sa += a; sb += b; saa += a * a; sbb += b * b; sab += a * b; n++; }
+        }
+        if (n < minN) continue;
+        const c = (sab - sa * sb / n) / Math.sqrt((saa - sa * sa / n) * (sbb - sb * sb / n) + 1e-9);
+        if (c > best) best = c;
+      }
+      return best;
+    };
+    const curve = [];
+    for (let P = 2 * W; P <= umax - umin - 1.5 * W; P += 2) curve.push({ P, c: corr(P) });
+    if (curve.length < 3) return 0;
+    const top = curve.reduce((m, v) => v.c > m.c ? v : m);
+    const sorted = curve.map(v => v.c).sort((p, q) => p - q), med = sorted[sorted.length >> 1];
+    // plus petit écart presque aussi bon que le meilleur : un tour (le meilleur peut tomber sur deux tours)
+    const pk = curve.find((v, i) => v.c >= .85 * top.c && (!curve[i - 1] || curve[i - 1].c <= v.c) && (!curve[i + 1] || curve[i + 1].c <= v.c)) || top;
+    let P = pk.P, c = pk.c;
+    for (const q of [pk.P - 1, pk.P + 1]){ const cq = corr(q); if (cq > c){ c = cq; P = q; } }
+    this.trace.push({ frame: this.frames, c: +c.toFixed(3), second: +med.toFixed(3), P, fallback: true });
+    return c >= .4 && c - med >= .15 ? P : 0;
   }
 
   // Panorama brut, tel qu'assemblé (scan arrêté avant la fin) : utile pour comprendre ce qui a coincé
