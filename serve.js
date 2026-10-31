@@ -7,7 +7,7 @@ const http = require("http"), https = require("https"), fs = require("fs"), path
 const { execFileSync } = require("child_process");
 
 const root = __dirname;
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".png": "image/png", ".mp4": "video/mp4", ".json": "application/json" };
+const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".png": "image/png", ".mp4": "video/mp4", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ttf": "font/ttf" };
 
 function handler(req, res) {
   let p = decodeURIComponent(new URL(req.url, "http://x").pathname);

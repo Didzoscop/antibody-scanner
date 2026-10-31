@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Antibody·Scanner</title>
 <meta name="theme-color" content="#CFE4F2">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
@@ -47,11 +50,10 @@ a.btn{color:inherit;text-decoration:none}
 .flag:active{transform:translate(var(--b),var(--b));box-shadow:none}
 .flag svg{width:22px;height:22px;display:block;shape-rendering:crispEdges}
 .flag.wide{display:flex;gap:.45rem;padding:4px .6rem;line-height:1;font-weight:600}
-/* interrupteur à deux positions (langue) */
-.seg{display:flex;border:var(--b) solid var(--ink);box-shadow:var(--b) var(--b) 0 var(--ink);background:var(--paper)}
-.seg button{border:0;background:none;min-width:48px;min-height:40px;padding:0 .6rem;font-weight:600;letter-spacing:.06em}
-.seg button+button{border-left:var(--b) solid var(--ink)}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+/* drapeau de langue */
+.langflag{padding:5px}
+.langflag svg{width:36px;height:24px;outline:2px solid var(--ink);shape-rendering:auto}
+html[lang="en"] .fl-fr,html[lang="fr"] .fl-en{display:none}
 
 /* Mascotte : fiole en pixel art, dessinée image par image (mascot.js) */
 .mascot{--s:4px;flex:none;width:calc(28*var(--s));height:calc(30*var(--s))}
@@ -71,9 +73,10 @@ a.btn{color:inherit;text-decoration:none}
 .btn.start{width:100%;min-height:72px;font-size:1.7rem;letter-spacing:.08em;text-transform:uppercase;box-shadow:6px 6px 0 var(--muted)}
 .btn.start:active{transform:translate(6px,6px)}
 .nav{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;width:100%;padding:0 var(--b) var(--b) 0}
+.nav .install{grid-column:1/-1}
 
 /* ---------- Écran de scan : aperçu caméra à gauche, panneau à droite ---------- */
-.scanview{position:fixed;inset:0;display:grid;grid-template-columns:1fr clamp(220px,28vw,320px);background:var(--bg)}
+.scanview{position:fixed;inset:0;display:grid;grid-template-columns:1fr clamp(220px,28vw,320px);grid-template-rows:1fr auto;background:var(--bg)}
 .cam{position:relative;overflow:hidden;background:var(--viewer);touch-action:none;border:var(--b) solid var(--ink);
   margin:.5rem 0 .5rem calc(.5rem + var(--sl))}
 .cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--viewer)}
@@ -99,7 +102,7 @@ a.btn{color:inherit;text-decoration:none}
 .topr{position:absolute;top:.6rem;right:.6rem}
 .swapcard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:.6rem 1rem}
 .swap{width:112px;height:154px}
-.panel{background:var(--paper);border-left:5px solid var(--ink);margin-left:.5rem;padding:.8rem;padding-right:calc(.8rem + var(--sr));
+.panel{background:var(--paper);border:var(--b) solid var(--ink);margin:.5rem calc(.5rem + var(--sr)) .5rem .5rem;padding:.8rem;
   display:flex;flex-direction:column;gap:.7rem;overflow:auto}
 .panel .big{font-size:1.45rem;font-weight:700;line-height:1.1}
 .panel .small{color:var(--muted);font-size:1rem;line-height:1.25}
@@ -107,13 +110,15 @@ a.btn{color:inherit;text-decoration:none}
 .panel .row{display:flex;padding:0 var(--b) var(--b) 0}
 .panel .row .btn{flex:1}
 .btn.run{min-height:60px;font-size:1.35rem;letter-spacing:.08em;text-transform:uppercase}
-/* barre de progression en cases pixel ; une fois le tour trouvé, chaque case est un morceau du tour */
-.progress{display:flex;flex-direction:column;gap:.3rem}
-.cells{display:grid;grid-template-columns:repeat(15,1fr);gap:2px;padding:3px;border:var(--b) solid var(--ink);background:var(--paper)}
-.cells i{background:transparent;height:12px}
-.cells i.on{background:var(--ink)}
-.progress.found .cells i.on{background:var(--ok)}
-.progress b{text-align:right;font-variant-numeric:tabular-nums}
+/* jauge en bas de l'écran : le dégradé rouge → orange → vert se découvre à mesure que le scan avance */
+.gauge{grid-column:1/-1;position:relative;height:30px;margin:0 calc(.5rem + var(--sr)) .5rem calc(.5rem + var(--sl));
+  border:var(--b) solid var(--ink);background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink);overflow:hidden}
+.gauge .fill{position:absolute;inset:0;background:linear-gradient(90deg,var(--err),#E8812F 45%,var(--wait) 65%,var(--ok) 92%)}
+.gauge .rest{position:absolute;top:0;right:0;bottom:0;width:calc(100% - var(--p,0%));background:var(--paper);transition:width .2s steps(3)}
+/* graduations pixel */
+.gauge::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 10px,var(--paper) 10px 12px)}
+.gauge b{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);z-index:1;font-variant-numeric:tabular-nums;
+  background:var(--ink);color:var(--paper);padding:0 .35rem;font-size:.9rem;line-height:1.3}
 .err{color:var(--err)}
 
 /* ---------- Panneaux latéraux (paramètres, registre) ---------- */
@@ -186,7 +191,11 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <body>
 
 <section class="home" id="home">
-  <div class="seg lang" id="langSeg" role="group" aria-label="Language"><button type="button" data-lang="en">EN</button><button type="button" data-lang="fr">FR</button></div>
+  <!-- drapeau de la langue en cours ; un appui passe à l'autre -->
+  <button class="flag langflag lang" id="btnLang" type="button">
+    <svg class="fl-en" viewBox="0 0 60 30"><clipPath id="ukT"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath><path d="M0 0h60v30H0z" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="M0 0l60 30m0-30L0 30" clip-path="url(#ukT)" stroke="#C8102E" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></svg>
+    <svg class="fl-fr" viewBox="0 0 3 2"><path d="M0 0h1v2H0z" fill="#002395"/><path d="M1 0h1v2H1z" fill="#fff"/><path d="M2 0h1v2H2z" fill="#ED2939"/></svg>
+  </button>
   <div class="home-card">
     <div class="mascot" id="homeMascot" aria-hidden="true"></div>
     <div class="home-main">
@@ -196,6 +205,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
       <nav class="nav">
         <button class="btn" id="btnSettings" type="button" data-i18n="settings"></button>
         <button class="btn" id="btnRegister" type="button"><span data-i18n="register"></span> <span class="count" id="countBadge">0</span></button>
+        <button class="btn install hidden" id="btnInstall" type="button" data-i18n="install"></button>
       </nav>
     </div>
   </div>
@@ -218,9 +228,10 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
   </div>
   <div class="panel">
     <div class="txt" role="status" aria-live="polite"><span class="big" id="stBig"></span><span class="small" id="stSmall"></span></div>
-    <div class="progress hidden" id="progress"><div class="cells" id="cells"></div><b id="pct">0 %</b></div>
+    <span class="note" id="fps"></span>
     <div class="row"><button class="btn primary run" id="btnRun" type="button"></button></div>
   </div>
+  <div class="gauge" id="gauge" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill"></div><div class="rest"></div><b id="pct">0 %</b></div>
 </section>
 
 <div class="scrim" id="scrim"></div>
@@ -260,7 +271,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.3';
+const VERSION = 'v0.4';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -269,7 +280,6 @@ const store = { get(k, d){ try { const v = JSON.parse(localStorage.getItem(k)); 
 $('ver').textContent = VERSION;
 VialMascot.create($('homeMascot'));
 const swapAnim = VialMascot.swap($('swap')), spinAnim = VialMascot.spin($('spin'));
-for (let i = 0; i < 30; i++) $('cells').appendChild(document.createElement('i'));
 
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2600); }
 
@@ -296,7 +306,8 @@ const I18N = {
     again: 'Scan saved. Run again whenever you like.', videoEnd: 'End of video: full turn not detected.',
     res: 'Resolution {w}×{h}', fps: ' at {f} fps', noCtl: ' This browser cannot set exposure or focus (Safari on iPhone, for example).',
     exposure: 'Exposure', iso: 'ISO', focus: 'Focus', zoom: 'Zoom', sport: 'Sport mode (1 ms)', torch: 'Torch', refused: 'Setting refused: ',
-    lensFail: 'This lens could not be opened'
+    lensFail: 'This lens could not be opened', fpsNow: '{f} frames/s processed', langTo: 'Language: English. Switch to French',
+    noTurn: ['Keep turning', 'Full turn not recognised yet. Check that the frame covers the label only.'], install: 'Install the app'
   },
   fr: {
     tag: "Scan des étiquettes de fioles d'anticorps", start: 'Scanner', settings: 'Paramètres', register: 'Registre', close: 'Fermer',
@@ -319,7 +330,8 @@ const I18N = {
     again: 'Scan enregistré. Relancez quand vous voulez.', videoEnd: 'Fin de la vidéo : tour complet non détecté.',
     res: 'Résolution {w}×{h}', fps: ' à {f} i/s', noCtl: " Ce navigateur ne permet pas de régler l'exposition ni la mise au point (c'est le cas de Safari sur iPhone).",
     exposure: 'Exposition', iso: 'ISO', focus: 'Mise au point', zoom: 'Zoom', sport: 'Mode sport (1 ms)', torch: 'Lampe', refused: 'Réglage refusé : ',
-    lensFail: "Impossible d'ouvrir cet objectif"
+    lensFail: "Impossible d'ouvrir cet objectif", fpsNow: '{f} images/s traitées', langTo: 'Langue : français. Passer en anglais',
+    noTurn: ['Continuez de tourner', "Tour complet pas encore reconnu. Vérifiez que le cadre ne couvre que l'étiquette."], install: "Installer l'app"
   }
 };
 const prefs = Object.assign({ sens: 25, autoNext: true, lang: 'en', lens: null }, store.get('prefs', {}));
@@ -329,11 +341,18 @@ function applyLang(){
   document.documentElement.lang = prefs.lang;
   document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
   document.querySelectorAll('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
-  document.querySelectorAll('#langSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === prefs.lang));
+  $('btnLang').setAttribute('aria-label', t('langTo'));
   $('viewImg').alt = t('alt');
 }
-document.querySelectorAll('#langSeg button').forEach(b => b.onclick = () => { prefs.lang = b.dataset.lang; savePrefs(); applyLang(); renderRegister(); });
+$('btnLang').onclick = () => { prefs.lang = prefs.lang === 'en' ? 'fr' : 'en'; savePrefs(); applyLang(); renderRegister(); };
 applyLang();
+
+/* ---------- App installable (Chrome) ---------- */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+let installEvt = null;   // Chrome propose l'installation : on affiche notre propre bouton sur l'accueil
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('btnInstall').classList.remove('hidden'); });
+window.addEventListener('appinstalled', () => { installEvt = null; $('btnInstall').classList.add('hidden'); });
+$('btnInstall').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('btnInstall').classList.add('hidden'); };
 
 /* ---------- Réglages ---------- */
 function fillRange(r){ r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }
@@ -546,7 +565,8 @@ function setState(s, small){
   roiEl.dataset.tone = s === 'scan' ? 'busy' : s === 'wait' || s === 'next' ? 'wait' : s === 'done' ? 'ok' : '';
   $('spin').classList.toggle('hidden', s !== 'scan');
   $('swapCard').classList.toggle('hidden', !(s === 'done' || s === 'next'));
-  $('progress').classList.toggle('hidden', !(s === 'scan' || s === 'done'));
+  if (!(s === 'scan' || s === 'done')) setGauge(0);
+  if (s !== 'scan') $('fps').textContent = '';
   $('btnRun').textContent = zone ? t('run') : t('stop');
   $('btnRun').classList.toggle('primary', zone);
 }
@@ -620,20 +640,23 @@ function scanFrame(){
   const r = engine.push(wctx.getImageData(0, 0, W, H).data);
   drawProgress(r);
   if (r.tooFast) setStatus(...t('tooFast'));
-  else if (r.frames % 10 === 0) setStatus(...t('scan'));
+  else if (r.frames % 10 === 0) setStatus(...t(!r.period && r.extent > 12 * W ? 'noTurn' : 'scan'));
   if (r.done) finish();
 }
+// avant le tour complet, on estime l'avancée d'après la longueur du panorama (au plus 60 %) ; ensuite, couverture réelle du tour
 function drawProgress(r){
-  const cells = $('cells').children, n = cells.length;
-  let on, pct;
-  if (r && r.period){ const m = engine.coverageMap(n); on = i => m[i]; pct = Math.round(r.coverage * 100); }
-  else { const k = r ? Math.min(.6, r.extent / (8 * W) * .6) : 0; on = i => i < Math.round(k * n); pct = Math.round(k * 100); }
-  for (let i = 0; i < n; i++) cells[i].classList.toggle('on', !!on(i));
-  $('progress').classList.toggle('found', !!(r && r.period)); $('pct').textContent = pct + ' %';
+  const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(Math.min(.6, r.extent / (8 * W) * .6) * 100) : 0;
+  setGauge(pct);
+  if (r){ // cadence de traitement, utile pour diagnostiquer un téléphone lent
+    const now = performance.now(); fpsHist.push(now); while (fpsHist.length > 30) fpsHist.shift();
+    if (fpsHist.length > 5 && r.frames % 10 === 0) $('fps').textContent = t('fpsNow', { f: Math.round((fpsHist.length - 1) * 1000 / (now - fpsHist[0])) });
+  } else { fpsHist.length = 0; $('fps').textContent = ''; }
 }
+const fpsHist = [];
+function setGauge(pct){ $('gauge').style.setProperty('--p', pct + '%'); $('gauge').setAttribute('aria-valuenow', pct); $('pct').textContent = pct + ' %'; }
 async function finish(){
   const { canvas, junction } = engine.result(); engine = null;
-  for (const c of $('cells').children) c.classList.add('on'); $('pct').textContent = '100 %';
+  setGauge(100);
   navigator.vibrate && navigator.vibrate([60, 60, 120]);
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
   try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); }

@@ -8,7 +8,9 @@ Tout le calcul se fait dans le navigateur du téléphone : aucune image n'est en
 
 ## Utiliser
 
-L'app s'utilise en paysage, en anglais par défaut (bouton EN / FR sur l'accueil).
+L'app s'utilise en paysage, en anglais par défaut (drapeau en haut à droite de l'accueil pour passer en français).
+Dans Chrome, le bouton **Install the app** de l'accueil (ou le menu ⋮ > « Installer l'application ») l'ajoute
+comme une vraie app, en plein écran et utilisable hors ligne.
 
 1. **Start scan** : l'aperçu de la caméra s'ouvre en grand. Le bouton **Lens** en haut à droite change
    d'objectif quand le téléphone en propose plusieurs.

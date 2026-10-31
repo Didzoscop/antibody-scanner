@@ -30,6 +30,9 @@ Cette étape n'est pas commencée : la v1 s'arrête à l'image à plat, par choi
 - `mascot.js` : la mascotte (fiole en pixel art, grille 70 × 75 comme celle de Petri·Capture), l'animation
   de remplacement de fiole dans le socle et les flèches de rotation.
 - `fonts/ByteBounce.ttf` : police reprise de Petri·Capture.
+- `manifest.webmanifest`, `sw.js`, `icons/` : app installable depuis Chrome (plein écran, paysage), utilisable
+  hors ligne. Le service worker prend le réseau d'abord, donc chaque push est visible sans réinstaller.
+  Les icônes sont la mascotte agrandie sur fond bleu (la version « maskable » a plus de marge).
 
 ## Direction artistique
 
@@ -41,7 +44,7 @@ police ByteBounce avec Pixelify Sans en secours. Seule différence : le fond est
 
 L'app est **en paysage uniquement** : verrouillage d'orientation en plein écran sur Android, sinon un écran
 « tournez le téléphone » couvre tout en portrait (sur écran tactile seulement). Aperçu caméra à gauche, panneau à droite.
-Langue : **anglais par défaut**, français au choix sur l'accueil (`I18N` dans index.html, `data-i18n` dans le HTML,
+Langue : **anglais par défaut**, français via le drapeau en haut à droite de l'accueil (`I18N` dans index.html, `data-i18n` dans le HTML,
 `t('clé')` dans le JS ; tout nouveau texte doit exister dans les deux langues). Le bouton « Lens / Objectif » en haut
 à droite de l'aperçu fait défiler les caméras arrière exposées par le navigateur (choix mémorisé dans `prefs.lens`) ;
 il est masqué s'il n'y en a qu'une.
@@ -80,12 +83,22 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    médiane récente est ignorée : ce sont les à-coups de rotation qui abîmaient le n° de lot.
 4. **Fermeture de boucle** (tour complet) : on compare l'image en cours au panorama, loin de la
    position actuelle (NCC sur le gradient, avec une petite recherche verticale). Le tour est validé
-   si NCC > 0,4, avec 0,08 d'écart sur le 2e meilleur candidat, et deux détections concordantes
+   si NCC ≥ 0,3, avec au moins 0,12 d'écart sur le 2e meilleur candidat, et deux détections concordantes
    (±4 px) parmi les 4 dernières.
+   - Sur la vidéo de test, le vrai raccord donne 0,37 à 0,50 contre ~0,12 pour le 2e candidat ; avant le
+     tour complet, le meilleur reste sous 0,18 et proche du 2e. L'ancien seuil (0,4 / 0,08) était trop juste
+     et laissait le scan bloqué à 60 %.
+   - **Coût** : cette recherche parcourt tout le panorama et coûtait 60 à 80 ms par essai sur PC (bien plus
+     sur téléphone), ce qui rendait l'app très lente. Elle est maintenant répartie sur plusieurs images
+     (`startClosure` fige l'image, `stepClosure` avance de `CLOSURE_OPS` opérations par image), avec une
+     ligne sur quatre en hauteur. Aucune image ne dépasse ~16 ms sur PC. `engine.trace` garde les derniers
+     résultats (NCC, 2e candidat, période) pour le diagnostic.
    - Comparer le panorama à lui-même ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
      panorama donne 0,56.
 5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
-   Le scan se termine à 99,5 % de couverture, avec une barre de progression et un anneau.
+   Le scan se termine à 99,5 % de couverture. La jauge en bas de l'écran (rouge → orange → vert) monte
+   jusqu'à 60 % d'après la longueur du panorama, puis affiche la couverture réelle. Le panneau affiche
+   aussi la cadence de traitement (images/s), utile pour diagnostiquer un téléphone lent.
 6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
    sombre sur presque toute la hauteur (médiane de l'obscurité entre 5 et 95 % de la hauteur, avec un
    contraste supérieur à 25 niveaux). L'image commence juste après et finit juste avant. La partie qui
