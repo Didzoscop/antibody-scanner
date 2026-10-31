@@ -271,7 +271,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.7';
+const VERSION = 'v0.8';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -609,14 +609,23 @@ $('btnRun').onclick = () => {
 /* Lecture de la zone. On découpe la zone dans l'image vidéo AVANT d'en copier les pixels (createImageBitmap) :
    copier une image 4K entière pour n'en garder qu'une bande coûte ~20 ms sur PC (bien plus sur téléphone),
    contre ~1,5 ms pour la zone seule. Une seule lecture par image sert à la fois au scan et à la détection du socle. */
+// Cadre large : on n'en traite que la bande centrale, d'au plus un quart de sa hauteur. Sur un cylindre, le texte des
+// bords est écrasé et défile moins vite qu'au centre, ce qui empêche le panorama de se recoller sur lui-même.
+// Simulation avec un cadre couvrant 80 % du diamètre : raccord 0,45 et circonférence fausse de 6 % sur tout le cadre,
+// contre 0,96 et juste sur la moitié centrale. La fenêtre du socle (8 × 39 mm, rapport 0,2) n'est pas rognée : une
+// bande plus étroite que ça décroche sur la vidéo de test, très tremblée.
+const MAX_ASPECT = .25;
+let crop = null;   // rectangle lu dans l'image vidéo (pixels)
 function setupCrop(){
-  const vw = video.videoWidth, vh = video.videoHeight, rw = Math.round(roi.w * vw), rh = Math.round(roi.h * vh), k = Math.min(1, 720 / rh);
-  W = Math.max(16, Math.round(rw * k) & ~1); H = Math.max(16, Math.round(rh * k) & ~1);
+  const vw = video.videoWidth, vh = video.videoHeight, rw = roi.w * vw, rh = roi.h * vh, cw = Math.min(rw, MAX_ASPECT * rh);
+  crop = { x: Math.round(roi.x * vw + (rw - cw) / 2), y: Math.round(roi.y * vh), w: Math.max(8, Math.round(cw)), h: Math.round(rh) };
+  const k = Math.min(1, 720 / crop.h);
+  W = Math.max(16, Math.round(crop.w * k) & ~1); H = Math.max(16, Math.round(crop.h * k) & ~1);
   wc = document.createElement('canvas'); wc.width = W; wc.height = H; wctx = wc.getContext('2d');
 }
 let bitmapOk = typeof createImageBitmap === 'function';
 async function grab(){
-  const vw = video.videoWidth, vh = video.videoHeight, sx = Math.round(roi.x * vw), sy = Math.round(roi.y * vh), sw = Math.round(roi.w * vw), sh = Math.round(roi.h * vh);
+  const { x: sx, y: sy, w: sw, h: sh } = crop;
   if (bitmapOk){
     try {
       const bmp = await createImageBitmap(video, sx, sy, sw, sh, { resizeWidth: W, resizeHeight: H, resizeQuality: 'high' });

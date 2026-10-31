@@ -72,6 +72,13 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
 
 1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
    localStorage. La hauteur de travail est plafonnée à 720 px.
+   - **Cadre large** (index.html, `setupCrop`) : on ne traite qu'une bande centrale d'au plus 0,25 × la hauteur
+     du cadre. Capture d'écran de l'utilisateur (fiole tenue à la main, sans socle, cadre couvrant ~80 % du
+     diamètre) : raccord bloqué à 0,04–0,07 alors que l'étiquette avait fait le tour. Cause : sur un cylindre,
+     les bords sont écrasés et défilent moins vite que le centre. Simulation (texture de l'étiquette réelle
+     projetée sur un cylindre) : cadre à 80 % du diamètre → raccord 0,45, circonférence fausse de 6 % ;
+     moitié centrale → 0,96, juste, tour reconnu après 1,1 tour. La fenêtre du socle (rapport 0,2) n'est pas
+     rognée : une bande de 58 px décroche sur la vidéo de test.
    - **Lecture des pixels** (index.html, `grab`) : `createImageBitmap(video, zone…)` découpe la zone avant
      la copie. `drawImage(video) + getImageData` copiait toute l'image 4K : ~20 ms sur PC, et c'était fait
      deux fois par image (scan + détection du socle). Avec le découpage : ~1,5 ms, une seule lecture par
