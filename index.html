@@ -1,466 +1,585 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Scan de fiole</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Antibody·Scanner</title>
+<meta name="theme-color" content="#CFE4F2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--muted:#5f6b7a;--line:#d9dee5;--accent:#0b6bcb;--ok:#1a7f37;--warn:#b35900;--bad:#c62828}
-@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1b2027;--fg:#e8ecf1;--muted:#9aa6b4;--line:#2c333d;--accent:#4c9ef0;--ok:#3fb950;--warn:#e3a33a;--bad:#ff6b6b}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
-h1{font-size:18px;margin:4px 0 12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
-#stage{position:relative;background:#000;border-radius:10px;overflow:hidden;touch-action:none}
-#video{display:block;width:100%;max-height:62vh;object-fit:contain}
-#roi{position:absolute;border:2px solid #ffd400;box-shadow:0 0 0 9999px rgba(0,0,0,.45);cursor:move}
-#roi .h{position:absolute;right:-12px;bottom:-12px;width:24px;height:24px;border-radius:50%;background:#ffd400;cursor:nwse-resize}
-#roi.locked{border-color:#3fb950;cursor:default}#roi.locked .h{display:none}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button,.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:9px;padding:10px 14px;font:inherit;cursor:pointer}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-button:disabled{opacity:.5;cursor:default}
-.muted{color:var(--muted);font-size:13px}
-#status{font-weight:600;min-height:1.4em}
-#status.ok{color:var(--ok)}#status.warn{color:var(--warn)}#status.bad{color:var(--bad)}
-.bar{height:14px;background:var(--line);border-radius:7px;overflow:hidden;margin:8px 0}
-.bar>div{height:100%;width:0;background:var(--accent);transition:width .15s}
-.bar.done>div{background:var(--ok)}
-#ring{width:100%;height:22px;display:block;border-radius:6px}
-#preview{width:100%;display:block;background:#000;border-radius:8px;min-height:40px}
-#result img{max-width:100%;display:block;margin:8px 0;border-radius:6px;border:1px solid var(--line)}
-details summary{cursor:pointer;font-weight:600}
-.ctl{display:grid;grid-template-columns:120px 1fr 64px;gap:8px;align-items:center;margin:8px 0}
-.ctl input[type=range]{width:100%}
+@font-face{font-family:"ByteBounce";src:url("fonts/ByteBounce.ttf") format("truetype");font-display:swap}
+/* Même direction artistique que Petri·Capture (encre noire, traits épais, ombres décalées, police pixel), sur fond bleu pastel */
+:root{
+  --bg:#CFE4F2; --paper:#F1F7FB; --ink:#1A1A1A; --muted:#4D5D6A;
+  --wait:#E0A526; --ok:#3A9A5B; --err:#D2452F; --viewer:#111;
+  --b:3px; /* épaisseur des traits */
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+  /* ByteBounce n'a pas tous les accents : Pixelify Sans prend le relais pour les caractères manquants */
+  font-family:"ByteBounce","Pixelify Sans",ui-monospace,"Courier New",monospace;
+  font-size:19px;line-height:1.35;-webkit-tap-highlight-color:transparent;
+}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:var(--b) dashed var(--ink);outline-offset:3px}
 .hidden{display:none!important}
+
+.btn{
+  border:var(--b) solid var(--ink);background:var(--paper);border-radius:0;
+  padding:.3rem .8rem;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;
+  box-shadow:var(--b) var(--b) 0 var(--ink);font-weight:600;
+}
+.btn:active:not([disabled]){transform:translate(var(--b),var(--b));box-shadow:none}
+a.btn{color:inherit;text-decoration:none}
+.btn.primary{background:var(--ink);color:var(--paper)}
+.btn.danger{color:var(--err);border-color:var(--err);box-shadow:var(--b) var(--b) 0 var(--err)}
+.btn[disabled]{opacity:.4;cursor:default}
+.count{background:var(--ink);color:var(--paper);padding:0 .4rem;font-size:.85rem;min-width:1.6rem;text-align:center}
+.flag{padding:4px;min-width:44px;min-height:44px;border:var(--b) solid var(--ink);background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink);line-height:0;display:grid;place-items:center}
+.flag:active{transform:translate(var(--b),var(--b));box-shadow:none}
+.flag svg{width:22px;height:22px;display:block;shape-rendering:crispEdges}
+
+/* Mascotte : fiole en pixel art, dessinée image par image (mascot.js) */
+.mascot{--s:4px;flex:none;width:calc(28*var(--s));height:calc(30*var(--s))}
+.mascot canvas,.swap canvas,.spin canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+
+/* ---------- Accueil ---------- */
+.home{position:fixed;inset:0;display:grid;place-items:center;padding:1.2rem;overflow:auto;
+  padding-top:calc(1.2rem + env(safe-area-inset-top,0px));padding-bottom:calc(1.2rem + env(safe-area-inset-bottom,0px))}
+.home-card{width:min(30rem,100%);display:flex;flex-direction:column;align-items:center;gap:1.1rem;
+  background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:1.4rem 1.4rem 1.6rem}
+.brand{text-align:center}
+.brand h1{font-size:1.5rem;margin:0;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.ver{font-size:.75rem;color:var(--muted)}
+.home .mascot{--s:6px}
+.home .tag{margin:-.4rem 0 0;color:var(--muted);text-align:center}
+.btn.start{width:100%;min-height:76px;font-size:1.7rem;letter-spacing:.08em;text-transform:uppercase;box-shadow:6px 6px 0 var(--muted)}
+.btn.start:active{transform:translate(6px,6px)}
+.nav{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;width:100%;padding:0 var(--b) var(--b) 0}
+
+/* ---------- Écran de scan : aperçu caméra presque plein écran, panneau en bas ---------- */
+.scanview{position:fixed;inset:0;display:grid;grid-template-rows:1fr auto;background:var(--bg)}
+.cam{position:relative;overflow:hidden;background:var(--viewer);touch-action:none;margin:.5rem .5rem 0;border:var(--b) solid var(--ink);
+  margin-top:calc(.5rem + env(safe-area-inset-top,0px))}
+.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--viewer)}
+/* zone de scan : encadrée, le reste de l'image est assombri */
+.roi{position:absolute;border:var(--b) solid var(--paper);outline:2px solid var(--ink);box-shadow:0 0 0 9999px rgba(17,17,17,.45);cursor:move}
+/* poignées d'angle placées à l'extérieur du cadre, pour ne pas masquer une zone étroite */
+.roi .h{position:absolute;width:14px;height:14px;background:var(--paper);border:var(--b) solid var(--ink)}
+.roi .h::after{content:'';position:absolute;inset:-12px}
+.roi .tl{left:-17px;top:-17px;cursor:nwse-resize}.roi .tr{right:-17px;top:-17px;cursor:nesw-resize}
+.roi .bl{left:-17px;bottom:-17px;cursor:nesw-resize}.roi .br{right:-17px;bottom:-17px;cursor:nwse-resize}
+.roi.locked{cursor:default}.roi.locked .h{display:none}
+.roi[data-tone="wait"]{border-color:var(--wait)}
+.roi[data-tone="ok"]{border-color:var(--ok)}
+/* le scan tourne : pointillés qui défilent autour du cadre */
+.roi[data-tone="busy"]{border-color:transparent;
+  background-image:linear-gradient(90deg,var(--paper) 50%,transparent 0),linear-gradient(90deg,var(--paper) 50%,transparent 0),
+    linear-gradient(0deg,var(--paper) 50%,transparent 0),linear-gradient(0deg,var(--paper) 50%,transparent 0);
+  background-repeat:repeat-x,repeat-x,repeat-y,repeat-y;background-size:16px 3px,16px 3px,3px 16px,3px 16px;
+  background-position:0 0,0 100%,0 0,100% 0;animation:ants .8s steps(8) infinite}
+@keyframes ants{to{background-position:16px 0,-16px 100%,0 -16px,100% 16px}}
+.spin{position:absolute;pointer-events:none}
+.topl{position:absolute;top:.6rem;left:.6rem;display:flex;gap:.6rem}
+/* flèches de réglage fin de la taille de la zone */
+.arrows{position:absolute;top:.6rem;right:.6rem;display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:3px}
+.arrows .flag{min-width:0;min-height:0;width:44px;height:44px}
+.arrows .n{grid-area:1/2}.arrows .w{grid-area:2/1}.arrows .e{grid-area:2/3}.arrows .s{grid-area:3/2}
+.arrows .lbl{grid-area:2/2;display:grid;place-items:center;font-size:.7rem;color:var(--paper);text-align:center;line-height:1}
+.swapcard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:.8rem 1.2rem}
+.swap{width:112px;height:154px}
+.panel{background:var(--paper);border-top:5px solid var(--ink);margin-top:.5rem;padding:.7rem 1rem;
+  padding-bottom:calc(.8rem + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:.6rem}
+.panel .big{font-size:1.45rem;font-weight:700;line-height:1.1}
+.panel .small{color:var(--muted);font-size:1rem;line-height:1.25;min-height:2.5em}
+.panel .txt{display:flex;flex-direction:column;gap:.15rem}
+.panel .row{display:flex;gap:.7rem;padding:0 var(--b) var(--b) 0}
+.panel .row .btn{flex:1}
+.btn.run{min-height:60px;font-size:1.35rem;letter-spacing:.08em;text-transform:uppercase}
+/* barre de progression en cases pixel ; une fois le tour trouvé, chaque case est un morceau du tour */
+.progress{display:flex;align-items:center;gap:.7rem}
+.cells{flex:1;display:grid;grid-template-columns:repeat(30,1fr);gap:2px;height:26px;padding:3px;border:var(--b) solid var(--ink);background:var(--paper)}
+.cells i{background:transparent}
+.cells i.on{background:var(--ink)}
+.progress.found .cells i.on{background:var(--ok)}
+.progress b{min-width:3.2rem;text-align:right;font-variant-numeric:tabular-nums}
+.err{color:var(--err)}
+
+/* ---------- Panneaux latéraux (paramètres, registre) ---------- */
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--paper);
+  border-left:5px solid var(--ink);z-index:20;display:flex;flex-direction:column;
+  transform:translateX(105%);transition:transform .25s steps(5);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet.open{transform:none}
+@media (prefers-reduced-motion: reduce){.sheet{transition:none}}
+.sheet-head{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:5px solid var(--ink)}
+.sheet-head h2{margin:0 auto 0 0;font-size:1.2rem;text-transform:uppercase;letter-spacing:.06em}
+.sheet-body{overflow:auto;padding:1rem;flex:1}
+.scrim{position:fixed;inset:0;background:rgba(26,26,26,.35);z-index:15;display:none}
+.scrim.open{display:block}
+.group-title{font-size:1.4rem;margin:1.2rem 0 .6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-bottom:2px dashed var(--ink);padding-bottom:.2rem}
+.group-title:first-child{margin-top:0}
+.field{margin-bottom:1.1rem}
+.field label{display:flex;justify-content:space-between;gap:1rem;font-weight:700;margin-bottom:.25rem}
+.field label span{font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.note{font-size:.9rem;color:var(--muted);margin:.25rem 0 .6rem}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;padding:0 var(--b) var(--b) 0}
+/* curseurs pixel : piste encadrée, partie remplie en noir (--p), poignée carrée avec ombre */
+input[type=range]{--p:50%;-webkit-appearance:none;appearance:none;width:100%;height:36px;margin:0;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:14px;border:var(--b) solid var(--ink);background:linear-gradient(90deg,var(--ink) 0 var(--p),var(--paper) var(--p))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:28px;margin-top:-10px;border:var(--b) solid var(--ink);border-radius:0;background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink)}
+input[type=range]:active::-webkit-slider-thumb{background:var(--wait)}
+input[type=range]::-moz-range-track{height:8px;border:var(--b) solid var(--ink);background:var(--paper)}
+input[type=range]::-moz-range-progress{height:8px;background:var(--ink)}
+input[type=range]::-moz-range-thumb{width:14px;height:22px;border:var(--b) solid var(--ink);border-radius:0;background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink)}
+.check{display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem;min-height:36px}
+input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:24px;height:24px;margin:0 var(--b) var(--b) 0;
+  border:var(--b) solid var(--ink);border-radius:0;background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink);cursor:pointer;display:grid;place-content:center}
+input[type=checkbox]:checked::before{content:'';width:12px;height:12px;background:var(--ink)}
+input[type=checkbox]:active{transform:translate(var(--b),var(--b));box-shadow:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem}
+.thumb{border:var(--b) solid var(--ink);overflow:hidden;background:var(--bg);padding:0;text-align:left;display:block;width:100%}
+.thumb img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#000}
+.thumb .meta{padding:.25rem .4rem;font-size:.78rem;font-variant-numeric:tabular-nums;border-top:2px solid var(--ink);background:var(--paper)}
+.empty{color:var(--muted);text-align:center;padding:2rem 1rem;display:flex;flex-direction:column;align-items:center;gap:1rem}
+dialog.pix{border:5px solid var(--ink);background:var(--paper);color:var(--ink);padding:1rem 1.2rem;width:min(34rem,94vw);max-height:94vh;overflow:auto;box-shadow:8px 8px 0 var(--ink)}
+dialog.pix::backdrop{background:rgba(26,26,26,.45)}
+dialog.pix h2{margin:0 0 .6rem;font-size:1.3rem;text-transform:uppercase;letter-spacing:.06em}
+dialog.pix img{display:block;max-width:100%;border:var(--b) solid var(--ink);margin:.4rem 0 .8rem}
+.toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--paper);padding:.5rem 1rem;z-index:40;display:none;max-width:90vw;box-shadow:var(--b) var(--b) 0 var(--muted)}
+.toast.show{display:block}
+
+@media (max-height:560px){
+  .panel{padding:.4rem .8rem;gap:.35rem}.panel .big{font-size:1.15rem}.panel .small{min-height:0;font-size:.9rem}
+  .btn.run{min-height:46px;font-size:1.1rem}.home .mascot{--s:4px}.btn.start{min-height:58px;font-size:1.35rem}
+  .arrows{grid-template-columns:repeat(3,38px);grid-template-rows:repeat(3,38px)}.arrows .flag{width:38px;height:38px}
+}
 </style>
 </head>
 <body>
-<main>
-<h1>Scan d'étiquette de fiole</h1>
 
-<div class="card">
-  <div id="stage"><video id="video" playsinline muted></video><div id="roi" class="hidden"><div class="h"></div></div></div>
-  <p class="muted" id="hint">Démarrez la caméra, puis placez le cadre jaune sur l'étiquette (toute sa hauteur, bandes colorées comprises).</p>
-  <div class="row">
-    <button id="btnCam" class="primary">Démarrer la caméra</button>
-    <button id="btnScan" disabled>Lancer le scan</button>
-    <button id="btnReset" disabled>Recommencer</button>
-    <label class="btn">Tester avec une vidéo<input id="file" type="file" accept="video/*" hidden></label>
+<section class="home" id="home">
+  <div class="home-card">
+    <div class="brand"><h1>Antibody·Scanner</h1><span class="ver" id="ver"></span></div>
+    <div class="mascot" id="homeMascot" aria-hidden="true"></div>
+    <p class="tag">Scan des étiquettes de fioles d'anticorps</p>
+    <button class="btn primary start" id="btnStart" type="button">Start scan</button>
+    <nav class="nav">
+      <button class="btn" id="btnSettings" type="button">Paramètres</button>
+      <button class="btn" id="btnRegister" type="button">Registre <span class="count" id="countBadge">0</span></button>
+    </nav>
   </div>
-</div>
+</section>
 
-<div class="card">
-  <div id="status">En attente</div>
-  <div class="bar" id="bar"><div></div></div>
-  <canvas id="ring" width="600" height="22"></canvas>
-  <p class="muted" id="info">Tournez la fiole doucement, dans un sens ou dans l'autre. Le scan se termine tout seul quand tout le tour a été vu.</p>
-  <canvas id="preview" height="0"></canvas>
-</div>
+<section class="scanview hidden" id="scan">
+  <div class="cam" id="cam">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="roi hidden" id="roi"><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
+    <div class="spin hidden" id="spin"></div>
+    <div class="topl">
+      <button class="flag" id="btnBack" type="button" aria-label="Retour à l'accueil"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 1h2v2H4zM2 3h2v2H2zM0 5h11v1H0zM2 6h2v2H2zM4 8h2v2H4z"/><path d="M1 4h2v3H1z"/></svg></button>
+      <button class="flag" id="btnGear" type="button" aria-label="Paramètres"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 0h3v2H4zM4 9h3v2H4zM0 4h2v3H0zM9 4h2v3H9zM1 1h2v2H1zM8 1h2v2H8zM1 8h2v2H1zM8 8h2v2H8zM3 2h5v1H3zM3 8h5v1H3zM2 3h1v5H2zM8 3h1v5H8z"/></svg></button>
+    </div>
+    <div class="arrows" id="arrows">
+      <button class="flag n" type="button" data-d="n" aria-label="Plus haut"><svg viewBox="0 0 9 9" fill="currentColor"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
+      <button class="flag w" type="button" data-d="w" aria-label="Plus étroit"><svg viewBox="0 0 9 9" fill="currentColor" style="transform:rotate(-90deg)"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
+      <span class="lbl">taille</span>
+      <button class="flag e" type="button" data-d="e" aria-label="Plus large"><svg viewBox="0 0 9 9" fill="currentColor" style="transform:rotate(90deg)"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
+      <button class="flag s" type="button" data-d="s" aria-label="Moins haut"><svg viewBox="0 0 9 9" fill="currentColor" style="transform:rotate(180deg)"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
+    </div>
+    <div class="swapcard hidden" id="swapCard"><div class="swap" id="swap" aria-hidden="true"></div></div>
+  </div>
+  <div class="panel">
+    <div class="txt" role="status" aria-live="polite"><span class="big" id="stBig"></span><span class="small" id="stSmall"></span></div>
+    <div class="progress hidden" id="progress"><div class="cells" id="cells"></div><b id="pct">0 %</b></div>
+    <div class="row"><button class="btn hidden" id="btnZone" type="button">Modifier la zone</button><button class="btn primary run" id="btnRun" type="button">Run scan</button></div>
+  </div>
+</section>
 
-<div class="card hidden" id="result">
-  <strong>Étiquette déroulée</strong>
-  <img id="out" alt="Étiquette déroulée">
-  <div class="row"><a class="btn" id="dl" download>Enregistrer l'image</a><button id="btnAgain">Nouveau scan</button></div>
-  <p class="muted" id="resInfo"></p>
-</div>
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheetSettings" aria-label="Paramètres">
+  <div class="sheet-head"><h2>Paramètres</h2><button class="btn" type="button" data-close>Fermer</button></div>
+  <div class="sheet-body">
+    <h3 class="group-title">Caméra</h3>
+    <p class="note" id="camNote">Les réglages de la caméra apparaissent pendant un scan.</p>
+    <div id="camCtl"></div>
+    <h3 class="group-title">Socle</h3>
+    <div class="field"><label for="sens">Sensibilité de détection de la fiole <span id="sensVal"></span></label>
+      <input type="range" id="sens" min="10" max="60" step="1"></div>
+    <label class="check"><input type="checkbox" id="autoNext"> Enchaîner automatiquement les fioles</label>
+    <h3 class="group-title">Zone de scan</h3>
+    <div class="row"><button class="btn" id="btnResetZone" type="button">Réinitialiser la zone</button></div>
+    <h3 class="group-title">Test</h3>
+    <p class="note">Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).</p>
+    <div class="row"><label class="btn">Tester avec une vidéo<input id="file" type="file" accept="video/*" hidden></label></div>
+  </div>
+</aside>
+<aside class="sheet" id="sheetRegister" aria-label="Registre">
+  <div class="sheet-head"><h2>Registre</h2><button class="btn" type="button" data-close>Fermer</button></div>
+  <div class="sheet-body"><div class="grid" id="regGrid"></div></div>
+</aside>
 
-<div class="card">
-  <details id="camCtl"><summary>Réglages caméra</summary>
-    <p class="muted" id="capInfo">Démarrez la caméra pour voir les réglages disponibles.</p>
-    <div class="row"><button id="btnSport" class="hidden">Mode sport (exposition courte)</button></div>
-    <div id="ctls"></div>
-  </details>
-</div>
-</main>
+<dialog class="pix" id="viewDlg">
+  <h2 id="viewTitle"></h2>
+  <img id="viewImg" alt="Étiquette déroulée">
+  <div class="row"><a class="btn primary" id="viewDl" download>Enregistrer</a><button class="btn danger" id="viewDel" type="button">Supprimer</button><button class="btn" id="viewClose" type="button">Fermer</button></div>
+</dialog>
+<div class="toast" id="toast" role="status"></div>
 
+<script src="mascot.js"></script>
+<script src="engine.js"></script>
 <script>
-"use strict";
+'use strict';
+const VERSION = 'v0.2';
 const $ = id => document.getElementById(id);
-const video = $("video"), roiEl = $("roi"), stage = $("stage");
 const params = new URLSearchParams(location.search);
+const video = $('video'), cam = $('cam'), roiEl = $('roi');
+const store = { get(k, d){ try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e){} } };
+$('ver').textContent = VERSION;
+VialMascot.create($('homeMascot'));
+const swapAnim = VialMascot.swap($('swap')), spinAnim = VialMascot.spin($('spin'));
+for (let i = 0; i < 30; i++) $('cells').appendChild(document.createElement('i'));
 
-/* ---------- Zone d'intérêt (fractions de l'image vidéo) ---------- */
-let roi = {x: .42, y: .28, w: .16, h: .4};
-try { const s = JSON.parse(localStorage.getItem("roi")); if (s && s.w) roi = s; } catch (e) {}
-if (params.get("roi")) { const v = params.get("roi").split(",").map(Number); roi = {x: v[0], y: v[1], w: v[2], h: v[3]}; }
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2600); }
 
-function videoBox() { // rectangle affiché de la vidéo (object-fit: contain)
-  const r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight;
-  const s = Math.min(r.width / vw, r.height / vh);
-  return {x: (r.width - vw * s) / 2, y: (r.height - vh * s) / 2, w: vw * s, h: vh * s};
-}
-function drawRoi() {
-  if (!video.videoWidth) return;
-  const b = videoBox();
-  Object.assign(roiEl.style, {left: b.x + roi.x * b.w + "px", top: b.y + roi.y * b.h + "px",
-    width: roi.w * b.w + "px", height: roi.h * b.h + "px"});
-  roiEl.classList.remove("hidden");
-}
-window.addEventListener("resize", drawRoi);
-video.addEventListener("loadedmetadata", drawRoi);
-(() => {
-  let drag = null;
-  roiEl.addEventListener("pointerdown", e => {
-    if (scanning) return;
-    roiEl.setPointerCapture(e.pointerId);
-    drag = {resize: e.target.classList.contains("h"), x: e.clientX, y: e.clientY, r: {...roi}};
+/* ---------- Réglages ---------- */
+const prefs = Object.assign({ sens: 25, autoNext: true }, store.get('prefs', {}));
+const savePrefs = () => store.set('prefs', prefs);
+function fillRange(r){ r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }
+$('sens').value = prefs.sens; $('sensVal').textContent = prefs.sens + ' %'; fillRange($('sens'));
+$('sens').oninput = e => { prefs.sens = +e.target.value; $('sensVal').textContent = prefs.sens + ' %'; fillRange(e.target); savePrefs(); };
+$('autoNext').checked = prefs.autoNext;
+$('autoNext').onchange = e => { prefs.autoNext = e.target.checked; savePrefs(); };
+
+/* ---------- Panneaux ---------- */
+function openSheet(id){ $(id).classList.add('open'); $('scrim').classList.add('open'); if (id === 'sheetRegister') renderRegister(); }
+function closeSheets(){ document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); $('scrim').classList.remove('open'); }
+$('scrim').onclick = closeSheets;
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
+$('btnSettings').onclick = () => openSheet('sheetSettings');
+$('btnGear').onclick = () => openSheet('sheetSettings');
+$('btnRegister').onclick = () => openSheet('sheetRegister');
+
+/* ---------- Registre (IndexedDB : les images restent sur l'appareil) ---------- */
+const DB = {
+  db: null,
+  open(){ return this.db || (this.db = new Promise((ok, ko) => { const r = indexedDB.open('antibody-scanner', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('scans', { keyPath: 'id', autoIncrement: true });
+    r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); })); },
+  async tx(mode, fn){ const db = await this.open(); return new Promise((ok, ko) => { const t = db.transaction('scans', mode), s = t.objectStore('scans'), r = fn(s); t.oncomplete = () => ok(r && r.result); t.onerror = () => ko(t.error); }); },
+  all(){ return this.tx('readonly', s => s.getAll()); },
+  add(rec){ return this.tx('readwrite', s => s.add(rec)); },
+  del(id){ return this.tx('readwrite', s => s.delete(id)); }
+};
+const fmtDate = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fileName = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `etiquette_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`; };
+let urls = [];
+async function renderRegister(){
+  let recs = [];
+  try { recs = await DB.all(); } catch (e){ $('regGrid').innerHTML = '<p class="empty">Registre indisponible sur ce navigateur.</p>'; return; }
+  $('countBadge').textContent = recs.length;
+  if (!$('sheetRegister').classList.contains('open')) return;
+  urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
+  const g = $('regGrid'); g.innerHTML = '';
+  if (!recs.length){ g.innerHTML = '<div class="empty" style="grid-column:1/-1">Aucun scan pour l\'instant.</div>'; return; }
+  recs.reverse().forEach(r => {
+    const u = URL.createObjectURL(r.blob); urls.push(u);
+    const b = document.createElement('button'); b.className = 'thumb'; b.type = 'button';
+    b.innerHTML = `<img alt=""><div class="meta"></div>`; b.querySelector('img').src = u; b.querySelector('.meta').textContent = fmtDate(r.date);
+    b.onclick = () => openScan(r, u); g.appendChild(b);
   });
-  roiEl.addEventListener("pointermove", e => {
-    if (!drag) return;
-    const b = videoBox(), dx = (e.clientX - drag.x) / b.w, dy = (e.clientY - drag.y) / b.h, r = drag.r;
-    if (drag.resize) { roi.w = Math.max(.01, Math.min(1 - r.x, r.w + dx)); roi.h = Math.max(.02, Math.min(1 - r.y, r.h + dy)); }
-    else { roi.x = Math.max(0, Math.min(1 - r.w, r.x + dx)); roi.y = Math.max(0, Math.min(1 - r.h, r.y + dy)); }
+}
+function openScan(r, u){
+  $('viewTitle').textContent = 'Scan du ' + fmtDate(r.date); $('viewImg').src = u; $('viewDl').href = u; $('viewDl').download = fileName(r.date);
+  $('viewDel').onclick = async () => { if (!confirm('Supprimer ce scan ?')) return; await DB.del(r.id); $('viewDlg').close(); renderRegister(); };
+  $('viewDlg').showModal();
+}
+$('viewClose').onclick = () => $('viewDlg').close();
+renderRegister();
+
+/* ---------- Zone de scan (fractions de l'image vidéo) ---------- */
+let roi = store.get('roi', null);
+if (params.get('roi')){ const v = params.get('roi').split(',').map(Number); roi = { x: v[0], y: v[1], w: v[2], h: v[3] }; }
+function defaultRoi(){ // fenêtre attendue du socle : étroite, haute, au centre
+  const vw = video.videoWidth, vh = video.videoHeight, h = .29 * Math.min(vw, vh), w = h * .19;
+  return { x: .5 - w / vw / 2, y: .5 - h / vh / 2, w: w / vw, h: h / vh };
+}
+$('btnResetZone').onclick = () => { roi = null; store.set('roi', null); if (video.videoWidth){ roi = defaultRoi(); drawRoi(); } toast('Zone réinitialisée'); };
+function videoBox(){ // rectangle affiché de la vidéo (object-fit: contain)
+  const r = cam.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight, s = Math.min(r.width / vw, r.height / vh);
+  return { x: (r.width - vw * s) / 2, y: (r.height - vh * s) / 2, w: vw * s, h: vh * s, left: r.left, top: r.top };
+}
+function clampRoi(){
+  const vw = video.videoWidth || 1, vh = video.videoHeight || 1;
+  roi.w = Math.min(1, Math.max(16 / vw, roi.w)); roi.h = Math.min(1, Math.max(32 / vh, roi.h));
+  roi.x = Math.min(1 - roi.w, Math.max(0, roi.x)); roi.y = Math.min(1 - roi.h, Math.max(0, roi.y));
+}
+function drawRoi(){
+  if (!video.videoWidth || !roi) return;
+  clampRoi();
+  const b = videoBox(), L = b.x + roi.x * b.w, T = b.y + roi.y * b.h, W = roi.w * b.w, H = roi.h * b.h;
+  Object.assign(roiEl.style, { left: L + 'px', top: T + 'px', width: W + 'px', height: H + 'px' });
+  roiEl.classList.remove('hidden');
+  const sw = Math.max(130, W * 3); // flèches de rotation centrées sur la zone
+  Object.assign($('spin').style, { width: sw + 'px', height: sw / 3 + 'px', left: L + W / 2 - sw / 2 + 'px', top: T + H / 2 - sw / 6 + 'px' });
+}
+window.addEventListener('resize', drawRoi);
+video.addEventListener('loadedmetadata', () => { if (!roi) roi = defaultRoi(); drawRoi(); });
+
+// au doigt : glisser pour déplacer, coins pour redimensionner, pincer pour changer la taille
+(() => {
+  const pts = new Map(); let g = null;
+  const editable = () => state === 'zone';
+  cam.addEventListener('pointerdown', e => {
+    if (!editable() || !roi || e.target.closest('button')) return;
+    cam.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const b = videoBox(), r0 = { ...roi };
+    if (pts.size === 2){
+      const [p, q] = [...pts.values()];
+      g = { kind: 'pinch', r0, dx0: Math.abs(p.x - q.x), dy0: Math.abs(p.y - q.y), mx0: (p.x + q.x) / 2, my0: (p.y + q.y) / 2, b };
+    } else if (pts.size === 1){
+      const h = e.target.classList.contains('h') ? [...e.target.classList].find(c => c.length === 2) : null;
+      const inside = e.target === roiEl || h;
+      g = inside ? { kind: h ? 'corner' : 'move', h, r0, x: e.clientX, y: e.clientY, b } : null;
+    }
+  });
+  cam.addEventListener('pointermove', e => {
+    if (!g || !pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const { r0, b } = g;
+    if (g.kind === 'pinch' && pts.size >= 2){
+      const [p, q] = [...pts.values()], cx = r0.x + r0.w / 2 + ((p.x + q.x) / 2 - g.mx0) / b.w, cy = r0.y + r0.h / 2 + ((p.y + q.y) / 2 - g.my0) / b.h;
+      roi.w = g.dx0 > 40 ? r0.w * Math.abs(p.x - q.x) / g.dx0 : r0.w;
+      roi.h = g.dy0 > 40 ? r0.h * Math.abs(p.y - q.y) / g.dy0 : r0.h;
+      roi.x = cx - roi.w / 2; roi.y = cy - roi.h / 2;
+    } else if (g.kind === 'move'){
+      roi.x = r0.x + (e.clientX - g.x) / b.w; roi.y = r0.y + (e.clientY - g.y) / b.h;
+    } else if (g.kind === 'corner'){
+      const dx = (e.clientX - g.x) / b.w, dy = (e.clientY - g.y) / b.h;
+      if (g.h[1] === 'l'){ roi.x = r0.x + dx; roi.w = r0.w - dx; } else roi.w = r0.w + dx;
+      if (g.h[0] === 't'){ roi.y = r0.y + dy; roi.h = r0.h - dy; } else roi.h = r0.h + dy;
+    }
     drawRoi();
   });
-  const end = () => { if (drag) { drag = null; try { localStorage.setItem("roi", JSON.stringify(roi)); } catch (e) {} } };
-  roiEl.addEventListener("pointerup", end); roiEl.addEventListener("pointercancel", end);
+  const end = e => { pts.delete(e.pointerId); if (!pts.size && g){ g = null; store.set('roi', roi); } else if (pts.size === 1 && g && g.kind === 'pinch') g = null; };
+  cam.addEventListener('pointerup', end); cam.addEventListener('pointercancel', end);
 })();
 
-/* ---------- Caméra et réglages ---------- */
-let track = null;
-async function startCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({audio: false, video: {
-      facingMode: {ideal: "environment"}, width: {ideal: 3840}, height: {ideal: 2160}, frameRate: {ideal: 60}}});
-    video.srcObject = stream; video.src = ""; await video.play();
-    track = stream.getVideoTracks()[0];
-    buildControls();
-    ready();
-  } catch (e) {
-    setStatus("Caméra inaccessible : " + e.message + (isSecureContext ? "" : " (la page doit être ouverte en https)"), "bad");
+// flèches : réglage fin de la taille, centré ; appui long = répétition
+document.querySelectorAll('#arrows .flag').forEach(btn => {
+  const step = () => {
+    if (!roi || state !== 'zone') return;
+    const d = btn.dataset.d, vw = video.videoWidth, vh = video.videoHeight, cx = roi.x + roi.w / 2, cy = roi.y + roi.h / 2;
+    if (d === 'n') roi.h += 4 / vh; if (d === 's') roi.h -= 4 / vh; if (d === 'e') roi.w += 2 / vw; if (d === 'w') roi.w -= 2 / vw;
+    clampRoi(); roi.x = cx - roi.w / 2; roi.y = cy - roi.h / 2; drawRoi(); store.set('roi', roi);
+  };
+  let t1, t2;
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); step(); t1 = setTimeout(() => t2 = setInterval(step, 60), 350); });
+  const stop = () => { clearTimeout(t1); clearInterval(t2); };
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+});
+
+/* ---------- Caméra ---------- */
+let source = params.get('video') ? { kind: 'file', url: params.get('video') } : { kind: 'camera' };
+let track = null, wakeLock = null;
+async function startSource(){
+  stopSource();
+  if (source.kind === 'file'){
+    video.srcObject = null; video.src = source.url; video.loop = false;
+    await new Promise(r => video.addEventListener('loadeddata', r, { once: true })); video.pause();
+    $('camNote').textContent = 'Vidéo de test : pas de réglages caméra.'; $('camCtl').innerHTML = '';
+    return;
   }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
+    facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 60 } } });
+  video.removeAttribute('src'); video.srcObject = stream; await video.play();
+  track = stream.getVideoTracks()[0]; buildCamControls();
 }
-function buildControls() {
-  const caps = track.getCapabilities ? track.getCapabilities() : {}, set = track.getSettings();
-  const box = $("ctls"); box.innerHTML = "";
-  $("capInfo").textContent = `Résolution ${set.width}×${set.height}` + (set.frameRate ? ` à ${Math.round(set.frameRate)} i/s` : "") + ".";
-  const apply = c => track.applyConstraints({advanced: [c]}).catch(e => setStatus("Réglage refusé : " + e.message, "warn"));
+function stopSource(){
+  if (video.srcObject){ video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  track = null; $('camCtl').innerHTML = ''; $('camNote').textContent = 'Les réglages de la caméra apparaissent pendant un scan.';
+}
+function buildCamControls(){
+  const caps = track.getCapabilities ? track.getCapabilities() : {}, set = track.getSettings(), box = $('camCtl'); box.innerHTML = '';
+  $('camNote').textContent = `Résolution ${set.width}×${set.height}` + (set.frameRate ? ` à ${Math.round(set.frameRate)} i/s` : '') + '.';
+  const apply = c => track.applyConstraints({ advanced: [c] }).catch(e => toast('Réglage refusé : ' + e.message));
   const slider = (key, label, fmt, modeKey) => {
-    const c = caps[key]; if (!c || c.max === undefined) return;
-    const d = document.createElement("div"); d.className = "ctl";
-    d.innerHTML = `<span>${label}</span><input type="range" min="${c.min}" max="${c.max}" step="${c.step || (c.max - c.min) / 100}" value="${set[key] ?? c.min}"><span></span>`;
-    const inp = d.children[1], out = d.children[2], show = () => out.textContent = fmt(+inp.value);
-    inp.oninput = () => { show(); apply(modeKey ? {[modeKey]: "manual", [key]: +inp.value} : {[key]: +inp.value}); };
+    const c = caps[key]; if (!c || c.max === undefined) return null;
+    const d = document.createElement('div'); d.className = 'field';
+    d.innerHTML = `<label>${label} <span></span></label><input type="range" min="${c.min}" max="${c.max}" step="${c.step || (c.max - c.min) / 100}" value="${set[key] ?? c.min}">`;
+    const inp = d.querySelector('input'), out = d.querySelector('span'), show = () => { out.textContent = fmt(+inp.value); fillRange(inp); };
+    inp.oninput = () => { show(); apply(modeKey ? { [modeKey]: 'manual', [key]: +inp.value } : { [key]: +inp.value }); };
     show(); box.appendChild(d); return inp;
   };
-  const exp = slider("exposureTime", "Exposition", v => (v / 10).toFixed(1) + " ms", "exposureMode");
-  slider("iso", "ISO", v => Math.round(v), "exposureMode");
-  slider("focusDistance", "Mise au point", v => v.toFixed(2), "focusMode");
-  slider("zoom", "Zoom", v => v.toFixed(1) + "×");
-  if (caps.torch) {
-    const b = document.createElement("button"); let on = false; b.textContent = "Lampe";
-    b.onclick = () => { on = !on; apply({torch: on}); b.classList.toggle("primary", on); }; box.appendChild(b);
+  const exp = slider('exposureTime', 'Exposition', v => (v / 10).toFixed(1) + ' ms', 'exposureMode'); // unités de 100 µs
+  slider('iso', 'ISO', v => Math.round(v), 'exposureMode');
+  slider('focusDistance', 'Mise au point', v => v.toFixed(2), 'focusMode');
+  slider('zoom', 'Zoom', v => v.toFixed(1) + '×');
+  const row = document.createElement('div'); row.className = 'row';
+  if (exp){ const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Mode sport (1 ms)';
+    b.onclick = () => { exp.value = Math.max(caps.exposureTime.min, Math.min(caps.exposureTime.max, 10)); exp.oninput(); }; row.appendChild(b); }
+  if (caps.torch){ let on = false; const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Lampe';
+    b.onclick = () => { on = !on; apply({ torch: on }); b.classList.toggle('primary', on); }; row.appendChild(b); }
+  if (row.children.length) box.appendChild(row);
+  if (!box.children.length) $('camNote').textContent += ' Ce navigateur ne permet pas de régler l\'exposition ni la mise au point (c\'est le cas de Safari sur iPhone).';
+}
+
+/* ---------- Déroulé du scan ----------
+   zone : on règle le cadre (socle vide)            → Run scan : on mémorise le fond
+   wait : on attend qu'une fiole occupe le socle    → scan
+   scan : la fiole tourne, le panorama se construit → done (ou retour à wait si la fiole est retirée avant la fin)
+   done : scan enregistré, on attend que le socle se vide → next : on attend la fiole suivante → scan */
+let state = 'idle', engine = null, wc = null, wctx = null, W = 0, H = 0;
+const det = { bg: null, bgFrames: 0, occ: false, n: 0 };
+const TEXT = {
+  zone: ['Zone de scan', 'Socle vide : placez le cadre sur la fenêtre du socle (doigt ou flèches), puis lancez le scan.'],
+  wait: ['Posez une fiole', 'Le scan démarre dès qu\'une fiole est détectée dans le socle.'],
+  scan: ['Tournez la fiole', 'Doucement, dans un sens ou dans l\'autre, jusqu\'à ce que la barre soit pleine.'],
+  done: ['Scan terminé', 'Enregistré dans le registre. Retirez la fiole et posez la suivante.'],
+  next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.']
+};
+function setStatus(big, small, cls){ $('stBig').textContent = big; $('stSmall').textContent = small; $('stSmall').className = 'small' + (cls ? ' ' + cls : ''); }
+function setState(s, small){
+  state = s; const [b, t] = TEXT[s] || ['', '']; setStatus(b, small || t);
+  const zone = s === 'zone';
+  $('arrows').classList.toggle('hidden', !zone);
+  roiEl.classList.toggle('locked', !zone);
+  roiEl.dataset.tone = s === 'scan' ? 'busy' : s === 'wait' || s === 'next' ? 'wait' : s === 'done' ? 'ok' : '';
+  $('spin').classList.toggle('hidden', s !== 'scan');
+  $('swapCard').classList.toggle('hidden', !(s === 'done' || s === 'next'));
+  $('progress').classList.toggle('hidden', !(s === 'scan' || s === 'done'));
+  $('btnRun').textContent = zone ? 'Run scan' : 'Stop';
+  $('btnRun').classList.toggle('primary', zone);
+  $('btnZone').classList.add('hidden');
+}
+
+async function enterScan(){
+  $('home').classList.add('hidden'); $('scan').classList.remove('hidden');
+  try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); } catch (e){}
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e){}
+  setStatus('Démarrage…', '');
+  try { await startSource(); }
+  catch (e){ setStatus('Caméra inaccessible', e.message + (isSecureContext ? '' : ' (la page doit être ouverte en https)'), 'err'); return; }
+  if (!roi) roi = defaultRoi();
+  drawRoi(); setState('zone'); loop();
+}
+function leaveScan(){
+  stopLoop(); state = 'idle'; stopSource(); video.removeAttribute('src'); video.load();
+  try { wakeLock && wakeLock.release(); } catch (e){} wakeLock = null;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  $('scan').classList.add('hidden'); $('home').classList.remove('hidden'); renderRegister();
+}
+$('btnStart').onclick = enterScan;
+$('btnBack').onclick = leaveScan;
+$('file').onchange = e => { const f = e.target.files[0]; if (!f) return; source = { kind: 'file', url: URL.createObjectURL(f) }; closeSheets();
+  if (state === 'idle') enterScan(); else startSource().then(() => { drawRoi(); setState('zone'); }); };
+
+$('btnRun').onclick = () => {
+  if (state === 'zone'){
+    store.set('roi', roi);
+    if (source.kind === 'file'){ startEngine(); stepFile(0); return; }   // vidéo de test : pas de détection du socle
+    det.bg = null; det.bgFrames = 0; det.occ = false; det.n = 0; setState('wait');
+  } else { engine = null; setState('zone'); }
+};
+
+// Petite image grise de la zone, pour savoir si le socle est vide ou occupé
+const dc = document.createElement('canvas'), dctx = dc.getContext('2d', { willReadFrequently: true });
+function smallGray(){
+  const vw = video.videoWidth, vh = video.videoHeight, gw = 12, gh = Math.max(12, Math.min(48, Math.round(12 * roi.h * vh / (roi.w * vw))));
+  if (dc.width !== gw || dc.height !== gh){ dc.width = gw; dc.height = gh; }
+  dctx.drawImage(video, roi.x * vw, roi.y * vh, roi.w * vw, roi.h * vh, 0, 0, gw, gh);
+  const d = dctx.getImageData(0, 0, gw, gh).data, g = new Float32Array(gw * gh);
+  for (let i = 0; i < g.length; i++) g[i] = d[i * 4] * .299 + d[i * 4 + 1] * .587 + d[i * 4 + 2] * .114;
+  return g;
+}
+function detect(){ // renvoie true/false une fois l'état stable (6 images de suite)
+  const g = smallGray();
+  if (!det.bg || det.bgFrames < 3){ // fond : moyenne des premières images après « Run scan »
+    if (!det.bg || det.bg.length !== g.length){ det.bg = g; det.bgFrames = 1; }
+    else { for (let i = 0; i < g.length; i++) det.bg[i] = (det.bg[i] * det.bgFrames + g[i]) / (det.bgFrames + 1); det.bgFrames++; }
+    return det.occ;
   }
-  if (exp) { // exposureTime est exprimé en unités de 100 µs
-    const sport = $("btnSport"); sport.classList.remove("hidden");
-    sport.onclick = () => { const v = Math.max(caps.exposureTime.min, Math.min(caps.exposureTime.max, 10)); exp.value = v; exp.oninput(); };
-  }
-  if (!box.children.length) $("capInfo").textContent += " Ce navigateur ne permet pas de régler l'exposition ni la mise au point (c'est le cas de Safari sur iPhone).";
+  let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - det.bg[i]) > 18) n++;
+  const frac = n / g.length, thr = prefs.sens / 100;
+  const raw = det.occ ? frac > thr * .4 : frac > thr;      // hystérésis
+  if (!det.occ && frac < thr * .3) for (let i = 0; i < g.length; i++) det.bg[i] += (g[i] - det.bg[i]) * .02; // le fond suit la lumière ambiante
+  if (raw !== det.occ){ if (++det.n >= 6){ det.occ = raw; det.n = 0; } } else det.n = 0;
+  return det.occ;
 }
 
-/* ---------- Moteur de scan ---------- */
-const CAP = 12000, OFF = 6000;           // colonnes du panorama, origine au centre
-let scanning = false, W, H, W2, H2, scale;
-let wc, wctx, mos, gm, best, filled, prevGx, pos, ypos, lastDx, lastDy, frames, sharpHist, umin, umax, closures, period, rejected;
-const MARGIN = 6;
-
-function ready() {
-  $("btnScan").disabled = false; $("btnReset").disabled = false; $("btnCam").textContent = "Caméra active";
-  $("hint").textContent = "Placez le cadre jaune sur l'étiquette (toute sa hauteur), puis lancez le scan.";
-  setStatus("Prêt", ""); drawRoi();
+function startEngine(){
+  const vw = video.videoWidth, vh = video.videoHeight, rw = Math.round(roi.w * vw), rh = Math.round(roi.h * vh), k = Math.min(1, 720 / rh);
+  W = Math.max(16, Math.round(rw * k) & ~1); H = Math.max(16, Math.round(rh * k) & ~1);
+  wc = document.createElement('canvas'); wc.width = W; wc.height = H; wctx = wc.getContext('2d', { willReadFrequently: true });
+  engine = new ScanEngine(W, H); setState('scan'); drawProgress(null);
 }
-function setStatus(t, cls) { const s = $("status"); s.textContent = t; s.className = cls || ""; }
-
-function resetScan() {
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const rw = Math.round(roi.w * vw), rh = Math.round(roi.h * vh);
-  scale = Math.min(1, 720 / rh);                      // on plafonne la hauteur de travail
-  W = Math.max(16, Math.round(rw * scale) & ~1); H = Math.max(16, Math.round(rh * scale) & ~1); W2 = W >> 1; H2 = H >> 1;
-  wc = document.createElement("canvas"); wc.width = W; wc.height = H; wctx = wc.getContext("2d", {willReadFrequently: true});
-  mos = new Uint8ClampedArray(CAP * H * 4);           // panorama RGBA, rangée par rangée
-  gm = new Float32Array(CAP * H2);                     // panorama en niveaux de gris demi-résolution, colonne par colonne
-  best = new Float32Array(CAP).fill(-1e9); filled = new Uint8Array(CAP);
-  prevGx = null; pos = 0; ypos = 0; lastDx = 0; lastDy = 0; frames = 0; sharpHist = []; umin = 1e9; umax = -1e9;
-  closures = []; period = 0; rejected = 0;
-  $("result").classList.add("hidden"); $("bar").classList.remove("done"); $("bar").firstElementChild.style.width = "0";
-  const p = $("preview"); p.width = 10; p.height = 0; drawRing();
-}
-
-// zone d'intérêt -> RGBA, gris (toutes les colonnes, une ligne sur deux) et son gradient horizontal
-function grab() {
+function scanFrame(){
   const vw = video.videoWidth, vh = video.videoHeight;
   wctx.drawImage(video, roi.x * vw, roi.y * vh, roi.w * vw, roi.h * vh, 0, 0, W, H);
-  const px = wctx.getImageData(0, 0, W, H).data;
-  const g = new Float32Array(W * H2), fx = new Float32Array(W * H2); let sharp = 0;
-  for (let y = 0; y < H2; y++) for (let x = 0; x < W; x++) {
-    const i = ((2 * y) * W + x) * 4, j = i + W * 4;
-    g[y * W + x] = (px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114 + px[j] * .299 + px[j + 1] * .587 + px[j + 2] * .114) / 2;
-  }
-  for (let y = 0; y < H2; y++) for (let x = 1; x < W - 1; x++) { const v = g[y * W + x + 1] - g[y * W + x - 1]; fx[y * W + x] = v; sharp += Math.abs(v); }
-  return {px, g, fx, sharp: sharp / (W * H2)};
+  const r = engine.push(wctx.getImageData(0, 0, W, H).data);
+  drawProgress(r);
+  if (r.tooFast) setStatus('Plus lentement', 'La fiole tourne trop vite pour une image nette.');
+  else if (r.frames % 10 === 0) setStatus(...TEXT.scan);
+  if (r.done) finish();
+}
+function drawProgress(r){
+  const cells = $('cells').children, n = cells.length;
+  let on, pct;
+  if (r && r.period){ const m = engine.coverageMap(n); on = i => m[i]; pct = Math.round(r.coverage * 100); }
+  else { const k = r ? Math.min(.6, r.extent / (8 * W) * .6) : 0; on = i => i < Math.round(k * n); pct = Math.round(k * 100); }
+  for (let i = 0; i < n; i++) cells[i].classList.toggle('on', !!on(i));
+  $('progress').classList.toggle('found', !!(r && r.period)); $('pct').textContent = pct + ' %';
+}
+async function finish(){
+  const { canvas, junction } = engine.result(); engine = null;
+  for (const c of $('cells').children) c.classList.add('on'); $('pct').textContent = '100 %';
+  navigator.vibrate && navigator.vibrate([60, 60, 120]);
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+  try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); }
+  catch (e){ toast('Impossible d\'enregistrer le scan : ' + e.message); }
+  toast(junction ? 'Scan enregistré dans le registre' : 'Scan enregistré (début de l\'étiquette non trouvé)');
+  if (source.kind === 'file' || !prefs.autoNext){ setState('zone', 'Scan enregistré. Relancez quand vous voulez.'); return; }
+  setState('done');
 }
 
-// Position absolue de l'image dans le panorama, cherchée autour de la prédiction :
-// l'erreur ne s'accumule pas d'une image à l'autre, contrairement à un suivi image par image.
-function registerMosaic(fx, pred) {
-  const p0 = Math.round(pred), yo2 = Math.round(ypos / 2), R = 4, rows = [];
-  for (let y = R + 2; y < H2 - R - 2; y += 2) rows.push(y);
-  const cost = new Map(); let bestC = Infinity, bp = 0, bd = 0;
-  for (let dp = -8; dp <= 8; dp++) for (let dy = -3; dy <= 3; dy++) {
-    const p = p0 + dp; let s = 0, n = 0;
-    for (let x = MARGIN; x < W - MARGIN; x++) {
-      const u = x - p + OFF; if (!filled[u - 1] || !filled[u + 1]) continue;
-      const a = (u + 1) * H2 - yo2 - dy, b = (u - 1) * H2 - yo2 - dy;
-      for (const y of rows) { const d = fx[y * W + x] - (gm[a + y] - gm[b + y]); s += d * d; }
-      n++;
-    }
-    if (n < (W - 2 * MARGIN) * .35) continue;
-    const c = s / n; cost.set(dp + "," + dy, c);
-    if (c < bestC) { bestC = c; bp = dp; bd = dy; }
+// boucle image par image : détection du socle et scan
+let loopId = null;
+function tick(){
+  if (state === 'idle' || source.kind === 'file' || video.readyState < 2) return;
+  if (state === 'wait'){ if (detect()) startEngine(); }
+  else if (state === 'scan'){
+    if (!detect()){ engine = null; setState('wait', 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.'); return; }
+    scanFrame();
   }
-  if (bestC === Infinity) return null;
-  const l = cost.get((bp - 1) + "," + bd), r = cost.get((bp + 1) + "," + bd);
-  let sub = 0; if (l !== undefined && r !== undefined) { const den = l - 2 * bestC + r; if (den > 0) sub = .5 * (l - r) / den; }
-  return {pos: p0 + bp + sub, ypos: 2 * (yo2 + bd)};
+  else if (state === 'done'){ if (!detect()) setState('next'); }
+  else if (state === 'next'){ if (detect()) startEngine(); }
 }
-
-// Décalage (dx, dy) tel que cur[y][x] ≈ prev[y-dy][x-dx] ; a et b sont des gradients W × H2
-// (dx en pixels pleine résolution, dy en lignes demi-résolution). Recherche autour du dernier mouvement.
-function register(a, b) {
-  const S = Math.round(W * .45), D = 3;
-  const c0 = Math.round(lastDx), lo = Math.max(-S, c0 - 14), hi = Math.min(S, c0 + 14);
-  const cost = new Map(); let bestC = Infinity, bx = 0, by = 0;
-  for (let dy = -D; dy <= D; dy++) for (let dx = lo; dx <= hi; dx++) {
-    const x0 = Math.max(1, 1 + dx), x1 = Math.min(W - 1, W - 1 + dx), y0 = Math.max(0, dy), y1 = Math.min(H2, H2 + dy);
-    if (x1 - x0 < W * .45) continue;
-    let s = 0, n = 0;
-    for (let y = y0; y < y1; y += 2) { const ra = (y - dy) * W - dx, rb = y * W; for (let x = x0; x < x1; x++) { const d = b[rb + x] - a[ra + x]; s += d * d; } n += x1 - x0; }
-    const c = s / n; cost.set(dx + "," + dy, c);
-    if (c < bestC) { bestC = c; bx = dx; by = dy; }
-  }
-  const l = cost.get((bx - 1) + "," + by), r = cost.get((bx + 1) + "," + by);
-  let sub = 0; if (l !== undefined && r !== undefined) { const den = l - 2 * bestC + r; if (den > 0) sub = .5 * (l - r) / den; }
-  return {dx: bx + sub, dy: 2 * by};
+function loop(){
+  if (state === 'idle') return;
+  tick();
+  loopId = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(loop) : requestAnimationFrame(loop);
 }
-
-function median(a) { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; }
-
-function processFrame() {
-  const f = grab(); frames++;
-  if (prevGx) {
-    const r = register(prevGx, f.fx);                  // estimation grossière image par image…
-    const m = umax > umin ? registerMosaic(f.fx, pos + r.dx) : null;   // …affinée sur le panorama
-    if (m) { lastDx = m.pos - pos; pos = m.pos; ypos = m.ypos; }
-    else { pos += r.dx; ypos += r.dy; lastDx = r.dx; }
-  }
-  prevGx = f.fx;
-  sharpHist.push(f.sharp); if (sharpHist.length > 45) sharpHist.shift();
-  const med = median(sharpHist);
-  const tooFast = Math.abs(lastDx) > W * .3;
-  // les images floues (à-coups de rotation) n'entrent pas dans le panorama
-  if (frames > 3 && f.sharp < .6 * med) rejected++;
-  else writeColumns(f, Math.log(f.sharp / med));
-  if (!period && frames % 2 === 0 && umax - umin > 2.5 * W) checkClosure(f);
-  updateUi(tooFast);
-  if (period && coverage() >= .995) finish();
-}
-
-function writeColumns(f, imgScore) {
-  const yo = Math.round(ypos), yo2 = Math.round(ypos / 2);
-  for (let x = MARGIN; x < W - MARGIN; x++) {
-    const u = Math.round(x - pos) + OFF; if (u < 1 || u >= CAP - 1) continue;
-    const s = -Math.abs(x - W / 2) / (W / 2) + imgScore;
-    if (s <= best[u]) continue;
-    best[u] = s; filled[u] = 1; if (u < umin) umin = u; if (u > umax) umax = u;
-    for (let y = 0; y < H; y++) {           // ligne du panorama = ligne de l'image - ypos
-      const fy = y + yo, o = (y * CAP + u) * 4;
-      if (fy < 0 || fy >= H) { mos[o + 3] = 0; continue; }
-      const i = (fy * W + x) * 4; mos[o] = f.px[i]; mos[o + 1] = f.px[i + 1]; mos[o + 2] = f.px[i + 2]; mos[o + 3] = 255;
-    }
-    for (let y = 0; y < H2; y++) { const fy = Math.min(H2 - 1, Math.max(0, y + yo2)); gm[u * H2 + y] = f.g[fy * W + x]; }
-  }
-}
-
-// Fermeture de boucle : l'image en cours ressemble-t-elle à une zone du panorama vue loin d'ici ?
-function checkClosure(f) {
-  const yo2 = Math.round(ypos / 2), cols = [];
-  for (let x = MARGIN; x < W - MARGIN; x += 2) cols.push(x);
-  const ucur = Math.round(cols[0] - pos) + OFF;   // colonne du panorama sous la 1re colonne comparée
-  const fa = [], R = 6, ys = [];
-  for (let y = R + 2; y < H2 - R - 2; y += 2) ys.push(y);
-  for (const x of cols) for (const y of ys) { const fy = Math.min(H2 - 1, Math.max(0, y + yo2)); fa.push(f.fx[fy * W + x]); }
-  let fn = 0; for (const v of fa) fn += v * v; if (fn === 0) return;
-  let top = {c: -1}, all = [];
-  for (let u0 = umin + 2; u0 + 2 * cols.length + 2 < umax; u0 += 2) {
-    if (Math.abs(u0 - ucur) < 2 * W) continue;
-    let ok = true; for (let k = 0; k < cols.length; k++) if (!filled[u0 + 2 * k - 1] || !filled[u0 + 2 * k + 1]) { ok = false; break; }
-    if (!ok) continue;
-    for (let dy = -R; dy <= R; dy++) {
-      let s = 0, n2 = 0, i = 0;
-      for (let k = 0; k < cols.length; k++) {
-        const ua = (u0 + 2 * k + 1) * H2, ub = (u0 + 2 * k - 1) * H2;
-        for (const y of ys) { const m = gm[ua + y + dy] - gm[ub + y + dy]; s += fa[i++] * m; n2 += m * m; }
-      }
-      const c = s / Math.sqrt(fn * n2 + 1e-9);
-      if (c > top.c) top = {c, u0};
-      all.push({c, u0});
-    }
-  }
-  if (top.c < .4) return;
-  const second = all.reduce((m, v) => Math.abs(v.u0 - top.u0) > 10 && v.c > m ? v.c : m, -1);
-  if (top.c - second < .08) return;
-  const P = ucur - top.u0;
-  if (Math.abs(P) <= 2 * W) return;
-  // il faut deux détections concordantes parmi les dernières pour valider le tour
-  const agree = closures.slice(-4).filter(q => Math.abs(q - P) <= 4);
-  closures.push(P);
-  if (agree.length) {
-    period = Math.abs(Math.round((agree[agree.length - 1] + P) / 2));
-    navigator.vibrate && navigator.vibrate(60);
-  }
-}
-
-function coverage() {
-  const seen = new Uint8Array(period);
-  for (let u = umin; u <= umax; u++) if (filled[u]) seen[((u - OFF) % period + period) % period] = 1;
-  let n = 0; for (const v of seen) n += v; return n / period;
-}
-
-function drawRing() {
-  const c = $("ring"), x = c.getContext("2d"); x.clearRect(0, 0, c.width, c.height);
-  x.fillStyle = getComputedStyle(document.body).getPropertyValue("--line"); x.fillRect(0, 0, c.width, c.height);
-  if (!period) return;
-  x.fillStyle = getComputedStyle(document.body).getPropertyValue("--ok");
-  for (let u = umin; u <= umax; u++) if (filled[u]) { const k = ((u - OFF) % period + period) % period; x.fillRect(k / period * c.width, 0, c.width / period + 1, c.height); }
-}
-
-function updateUi(tooFast) {
-  if (frames % 3) return;
-  const ext = Math.max(0, umax - umin + 1), bar = $("bar").firstElementChild;
-  if (period) {
-    const cov = coverage(); bar.style.width = (cov * 100).toFixed(0) + "%";
-    setStatus(`Tour détecté : ${(cov * 100).toFixed(0)} % couvert, continuez sur les zones grises`, tooFast ? "warn" : "ok");
-  } else {
-    bar.style.width = Math.min(60, ext / (8 * W) * 60) + "%";
-    setStatus(tooFast ? "Plus lentement" : "Tournez… recherche du tour complet", tooFast ? "warn" : "");
-  }
-  $("info").textContent = `${frames} images, ${rejected} floues ignorées, ${ext} px capturés` + (period ? `, circonférence ${period} px` : "");
-  drawRing(); drawPreview();
-}
-
-function drawPreview() {
-  if (umax < umin) return;
-  const ext = umax - umin + 1, p = $("preview");
-  if (p.width !== ext || p.height !== H) { p.width = ext; p.height = H; }
-  const img = new ImageData(ext, H);
-  for (let y = 0; y < H; y++) img.data.set(mos.subarray((y * CAP + umin) * 4, (y * CAP + umax + 1) * 4), y * ext * 4);
-  p.getContext("2d").putImageData(img, 0, 0);
-}
-
-/* ---------- Mise à plat finale ---------- */
-function finish() {
-  stopLoop(); scanning = false; roiEl.classList.remove("locked");
-  const P = period;
-  // jonction début/fin : colonne sombre sur presque toute la hauteur
-  const dark = new Float32Array(CAP), y0 = Math.round(H * .05), y1 = Math.round(H * .95), col = [];
-  for (let u = umin; u <= umax; u++) {
-    if (!filled[u]) continue; col.length = 0;
-    for (let y = y0; y < y1; y += 2) { const o = (y * CAP + u) * 4; col.push(255 - (mos[o] * .299 + mos[o + 1] * .587 + mos[o + 2] * .114)); }
-    dark[u] = median(col);
-  }
-  const sm = new Float32Array(CAP);
-  for (let u = umin + 2; u <= umax - 2; u++) sm[u] = (dark[u - 2] + dark[u - 1] + dark[u] + dark[u + 1] + dark[u + 2]) / 5;
-  let pk = umin + 2; for (let u = umin + 2; u <= umax - 2; u++) if (sm[u] > sm[pk]) pk = u;
-  const vals = []; for (let u = umin; u <= umax; u++) if (filled[u]) vals.push(sm[u]);
-  const base = median(vals); let start = umin, len = P, junction = false;
-  if (sm[pk] - base > 25) {
-    const th = (sm[pk] + base) / 2; let l = pk, r = pk;
-    while (l > umin && sm[l - 1] > th) l--; while (r < umax && sm[r + 1] > th) r++;
-    junction = true; start = r + 1; len = P - (r - l + 1);
-    while (start - P >= umin) start -= P;            // occurrence la plus à gauche
-  }
-  // une colonne x du résultat vient de x, ou de x - P (même endroit, un tour plus tôt) si x dépasse le panorama
-  const src = x => { if (x <= umax && filled[x]) return x; if (filled[x - P]) return x - P; if (filled[x + P]) return x + P; return -1; };
-  // décalage vertical entre les deux passages, mesuré sur la zone vue deux fois
-  let shift = 0;
-  const seam = Math.min(umax, start + len - 1) - 20;
-  if (start + len - 1 > umax) {
-    let bestC = -2;
-    for (let dy = -12; dy <= 12; dy++) {
-      let s = 0, na = 0, nb = 0;
-      for (let u = seam - 40; u < seam; u++) {
-        if (!filled[u] || !filled[u - P]) continue;
-        for (let y = 14; y < H2 - 14; y++) { const a = gm[u * H2 + y], b = gm[(u - P) * H2 + y + dy]; s += a * b; na += a * a; nb += b * b; }
-      }
-      const c = s / Math.sqrt(na * nb + 1e-9); if (c > bestC) { bestC = c; shift = 2 * dy; }
-    }
-  }
-  const out = document.createElement("canvas"); out.width = len; out.height = H;
-  const img = new ImageData(len, H);
-  for (let k = 0; k < len; k++) {
-    const x = start + k, cut = x > seam && start + len - 1 > umax, u = cut ? (filled[x - P] ? x - P : src(x)) : src(x);
-    if (u < 0) continue;
-    const dy = u < x ? shift : 0;
-    for (let y = 0; y < H; y++) { const sy = Math.min(H - 1, Math.max(0, y + dy)), o = (sy * CAP + u) * 4, d = (y * len + k) * 4;
-      img.data[d] = mos[o]; img.data[d + 1] = mos[o + 1]; img.data[d + 2] = mos[o + 2]; img.data[d + 3] = 255; }
-  }
-  out.getContext("2d").putImageData(img, 0, 0);
-  const url = out.toDataURL("image/png");
-  $("out").src = url; $("dl").href = url;
-  const t = new Date(), pad = n => String(n).padStart(2, "0");
-  $("dl").download = `etiquette_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.png`;
-  $("resInfo").textContent = `${len} × ${H} px. ` + (junction ? "Début et fin de l'étiquette détectés." : "Jonction de l'étiquette non trouvée : l'image commence à un endroit arbitraire.");
-  $("result").classList.remove("hidden"); $("bar").classList.add("done"); $("bar").firstElementChild.style.width = "100%";
-  setStatus("Scan terminé", "ok"); $("btnScan").textContent = "Lancer le scan";
-  $("result").scrollIntoView({behavior: "smooth"});
-}
-
-/* ---------- Boucle ---------- */
-let loopId = null, loopKind = null;
-function loop() {
-  if (!scanning) return;
-  if (video.readyState >= 2) processFrame();
-  if (!scanning) return;
-  if (video.requestVideoFrameCallback) { loopKind = "v"; loopId = video.requestVideoFrameCallback(loop); }
-  else { loopKind = "r"; loopId = requestAnimationFrame(loop); }
-}
-function stopLoop() {
+function stopLoop(){
   if (loopId === null) return;
-  if (loopKind === "v") video.cancelVideoFrameCallback(loopId); else cancelAnimationFrame(loopId);
+  if (video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(loopId); else cancelAnimationFrame(loopId);
   loopId = null;
 }
-function startScan() {
-  resetScan(); scanning = true; roiEl.classList.add("locked");
-  $("btnScan").textContent = "Arrêter"; setStatus("Tournez la fiole…", "");
-  if (video.srcObject) loop(); else stepFile(0);
-}
-// Vidéo de test : on avance image par image pour traiter chaque image, quelle que soit la vitesse de l'appareil
-function stepFile(t) {
-  const fps = +(params.get("fps") || 60);
-  if (!scanning) return;
-  if (t > video.duration) { if (period) finish(); else stopScan(); return; }
-  video.addEventListener("seeked", () => { if (!scanning) return; processFrame(); if (scanning) stepFile(t + 1 / fps); }, {once: true});
+// vidéo de test : on avance image par image pour traiter chaque image, quelle que soit la vitesse de l'appareil
+function stepFile(t){
+  const fps = +(params.get('fps') || 60);
+  if (state !== 'scan' || !engine) return;
+  if (t > video.duration){ if (engine.period) finish(); else { engine = null; setState('zone', 'Fin de la vidéo : tour complet non détecté.'); } return; }
+  video.addEventListener('seeked', () => { if (state !== 'scan' || !engine) return; scanFrame(); if (state === 'scan' && engine) stepFile(t + 1 / fps); }, { once: true });
   video.currentTime = t;
 }
-function stopScan() {
-  stopLoop(); scanning = false; roiEl.classList.remove("locked"); $("btnScan").textContent = "Lancer le scan";
-  setStatus(period ? "Scan arrêté avant d'avoir couvert tout le tour" : "Scan arrêté : tour complet non détecté", "warn");
-}
-
-$("btnCam").onclick = startCamera;
-$("btnScan").onclick = () => scanning ? stopScan() : startScan();
-$("btnReset").onclick = () => { if (scanning) stopScan(); resetScan(); setStatus("Prêt", ""); };
-$("btnAgain").onclick = () => { resetScan(); startScan(); };
-
-function loadVideo(src) {
-  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
-  video.src = src; video.loop = false;
-  video.addEventListener("loadeddata", () => { video.pause(); ready(); $("hint").textContent = "Vidéo chargée. Ajustez le cadre jaune sur l'étiquette, puis lancez le scan."; }, {once: true});
-}
-$("file").onchange = e => { const f = e.target.files[0]; if (f) loadVideo(URL.createObjectURL(f)); };
-if (params.get("video")) loadVideo(params.get("video"));
 </script>
 </body>
 </html>

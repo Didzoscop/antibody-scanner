@@ -1,41 +1,39 @@
-# Scan de fiole : prototype web
+# Antibody·Scanner
 
-Web app qui filme la fiole en rotation, assemble l'étiquette comme un panorama, détecte le tour
-complet et sort l'étiquette à plat, recadrée de bord à bord. Tout le calcul se fait dans le
-navigateur du téléphone : aucune image n'est envoyée ailleurs.
+Web app qui filme une fiole d'anticorps posée dans un socle, assemble son étiquette comme un panorama
+pendant qu'on la tourne, détecte le tour complet et sort l'étiquette à plat, de bord à bord.
+Tout le calcul se fait dans le navigateur du téléphone : aucune image n'est envoyée ailleurs.
 
-**App en ligne : https://didzoscop.github.io/antibody-scanner/** (s'ouvre directement sur le téléphone).
-
-Le dossier `tools/` contient les prototypes Python (OpenCV) qui ont validé l'approche, et `docs/` des résultats.
-
-## Lancer
-
-Sur le PC (Node.js requis) :
-
-    node serve.js
-
-- PC : http://localhost:8080
-- Téléphone, sur le même Wi-Fi : l'adresse `https://<IP du PC>:8443` affichée au démarrage.
-  Le certificat est auto-signé : accepter l'avertissement une fois (« Paramètres avancés » > « Continuer »).
-  Si la page ne s'ouvre pas, autoriser Node.js dans le pare-feu Windows (réseaux privés).
+**App en ligne : https://didzoscop.github.io/antibody-scanner/**
 
 ## Utiliser
 
-1. « Démarrer la caméra ».
-2. Placer le cadre jaune sur l'étiquette : toute sa hauteur, environ 5 à 8 mm de large au centre de la fiole.
-   La position est mémorisée pour la fois suivante.
-3. Sur Android, ouvrir « Réglages caméra » : « Mode sport » (exposition 1 ms), et régler la mise au point si besoin.
-4. « Lancer le scan », puis tourner la fiole doucement, dans un sens ou dans l'autre.
-   La barre se remplit, et le tour est confirmé par une vibration. L'anneau vert montre les zones couvertes.
-5. Le scan s'arrête tout seul : « Enregistrer l'image ».
+1. **Start scan** : l'aperçu de la caméra s'ouvre en grand.
+2. **Zone de scan** (socle vide) : placez le cadre sur la fenêtre du socle, au doigt (glisser, coins, pincer)
+   ou avec les 4 flèches en haut à droite pour régler la taille finement. La zone est mémorisée.
+3. **Run scan** : l'app mémorise le fond, puis attend qu'une fiole soit posée.
+4. Fiole détectée : le scan démarre, les flèches invitent à tourner la fiole, la barre se remplit.
+5. Scan terminé : l'étiquette est enregistrée dans le **Registre**. Retirez la fiole et posez la suivante :
+   le scan suivant démarre tout seul.
 
-« Tester avec une vidéo » rejoue une vidéo enregistrée comme si c'était la caméra.
-Paramètres d'URL utiles pour les tests : `?video=test.mp4&roi=x,y,l,h` (fractions de l'image).
+Sur Android, **Paramètres** propose les réglages caméra pendant un scan (« Mode sport », mise au point, lampe),
+la sensibilité de détection du socle et un mode test qui rejoue une vidéo.
+
+Démo sur la vidéo de test :
+https://didzoscop.github.io/antibody-scanner/?video=test/fiole_siglec-f.mp4&roi=0.4792,0.2778,0.0307,0.2917
+
+## Développer en local
+
+    node serve.js
+
+`http://localhost:8080` sur le PC, `https://<IP du PC>:8443` sur un téléphone du même Wi-Fi
+(certificat auto-signé à accepter une fois).
+
+Le dossier `tools/` contient les prototypes Python (OpenCV) qui ont validé l'approche, `docs/` des résultats,
+`test/` les vidéos de test. Le contexte technique complet est dans `CLAUDE.md`.
 
 ## Limites connues
 
-- Safari sur iPhone ne permet ni de régler l'exposition ni de verrouiller la mise au point
-  (il faudra une app native pour le mode sport sur iPhone).
+- Safari sur iPhone ne permet ni de régler l'exposition ni de verrouiller la mise au point.
 - La jonction de l'étiquette est trouvée grâce à l'espace visible entre ses deux bords.
-  Si une étiquette se chevauche, l'image commence à un endroit arbitraire.
-- Quelques raccords restent visibles dans le texte (lettres doublées ou rognées).
+- Quelques raccords restent visibles dans le texte.

@@ -24,9 +24,27 @@ Cette étape n'est pas commencée : la v1 s'arrête à l'image à plat, par choi
 
 ## Fichiers
 
-- `index.html` : toute l'app (HTML, CSS et JS dans un seul fichier, sans dépendance).
-  Elle est publiée par GitHub Pages sur https://didzoscop.github.io/antibody-scanner/ et se met à jour
-  à chaque push sur `main`.
+- `index.html` : l'interface (accueil, écran de scan, paramètres, registre). Publiée par GitHub Pages
+  sur https://didzoscop.github.io/antibody-scanner/, mise à jour à chaque push sur `main`.
+- `engine.js` : le moteur de scan (`ScanEngine`), indépendant de la caméra : il reçoit les pixels RGBA de la zone.
+- `mascot.js` : la mascotte (fiole en pixel art, grille 70 × 75 comme celle de Petri·Capture), l'animation
+  de remplacement de fiole dans le socle et les flèches de rotation.
+- `fonts/ByteBounce.ttf` : police reprise de Petri·Capture.
+
+## Direction artistique
+
+Identique à Petri·Capture (`D:\Documents\petri-capture`, https://github.com/Didzoscop/petri-capture) :
+encre `#1A1A1A`, traits de 3 px, ombres décalées pleines, boutons carrés, titres en capitales espacées,
+police ByteBounce avec Pixelify Sans en secours. Seule différence : le fond est bleu pastel (`--bg:#CFE4F2`, `--paper:#F1F7FB`).
+
+## Déroulé de l'écran de scan
+
+`zone` (on règle le cadre, socle vide, au doigt ou avec les 4 flèches de taille) → « Run scan » mémorise le fond
+→ `wait` (fiole détectée quand la zone diffère du fond) → `scan` (flèches qui tournent, barre de progression)
+→ `done` (scan enregistré dans le registre, animation de remplacement) → socle vidé → `next` → fiole posée → `scan`.
+La détection compare une image 12 × N en gris au fond, avec hystérésis et 6 images de confirmation ; le fond suit
+lentement la lumière quand le socle est vide. Avec une vidéo de test, la détection du socle est ignorée.
+Le registre est stocké sur l'appareil (IndexedDB, base `antibody-scanner`).
 - `serve.js` : serveur local pour tester. `http://localhost:8080` sur le PC, et
   `https://<IP>:8443` pour un téléphone sur le même Wi-Fi (certificat auto-signé généré dans `cert/`,
   à ne jamais commiter). `TEST_VIDEO=chemin.mp4 node serve.js` sert en plus une vidéo sur `/test.mp4`.
@@ -40,7 +58,7 @@ Tester l'app sur une vidéo sans caméra :
 (le ROI est en fractions de l'image et correspond à la vidéo de test de l'utilisateur). Avec une vidéo,
 l'app avance image par image par `seeked`, ce qui marche même dans un onglet masqué, mais lentement.
 
-## Algorithme (index.html)
+## Algorithme (engine.js)
 
 1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
    localStorage. La hauteur de travail est plafonnée à 720 px.
