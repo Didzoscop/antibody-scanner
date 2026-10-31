@@ -103,7 +103,7 @@ class ScanEngine{
     // fin du scan : tout le tour a été vu, à de petits trous près (4 colonnes au plus, comblés par les voisines à la mise à plat)
     const done = !!this.period && cov.gap <= 4;
     return { frames: this.frames, rejected: this.rejected, extent: Math.max(0, this.umax - this.umin + 1), period: this.period,
-      coverage: cov.coverage, tooFast: Math.abs(this.lastDx) > this.W * .3, done };
+      coverage: cov.coverage, tooFast: Math.abs(this.lastDx) > this.W * .2, done };
   }
 
   write(f, imgScore){

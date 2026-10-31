@@ -72,6 +72,17 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
 
 1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
    localStorage. La hauteur de travail est plafonnée à 720 px.
+   - **Vitesse** : le suivi tient jusqu'à ~0,3 × la largeur de la bande par image (simulation, bande de 60 px :
+     16 px/image OK, 22 px → circonférence fausse, 30 px → bloqué). Au-delà, le panorama se brouille.
+     Le cadre clignote en rouge dès 0,2 × la largeur (« Trop vite ! »). Une bande plus étroite tolère donc moins
+     de vitesse : resserrer le cadre n'aide pas l'utilisateur, au contraire.
+   - **Tentative abandonnée (v0.9, non publiée)** : détecter la perte du suivi (à-coup) et se recaler dans le
+     panorama après un retour en arrière. Ça marchait sur les simulations d'à-coups, mais : un seuil sur la
+     ressemblance au panorama donne de fausses alertes dans les zones blanches de l'étiquette (le NCC y tombe
+     naturellement à ~0,15) ; ne pas écrire les images douteuses fait caler le panorama ; et un à-coup mal
+     interprété écrit deux fois le même morceau d'étiquette, si bien que le panorama se répète vraiment à la
+     mauvaise période (un contrôle par autocorrélation ne l'attrape pas). Plusieurs réglages ont même rendu
+     fausses des rotations douces. À reprendre seulement avec de vraies vidéos de l'utilisateur.
    - **Cadre large** (index.html, `setupCrop`) : on ne traite qu'une bande centrale d'au plus 0,25 × la hauteur
      du cadre. Capture d'écran de l'utilisateur (fiole tenue à la main, sans socle, cadre couvrant ~80 % du
      diamètre) : raccord bloqué à 0,04–0,07 alors que l'étiquette avait fait le tour. Cause : sur un cylindre,

@@ -90,6 +90,9 @@ html[lang="en"] .fl-fr,html[lang="fr"] .fl-en{display:none}
 .roi.locked{cursor:default}.roi.locked .h{display:none}
 .roi[data-tone="wait"]{border-color:var(--wait)}
 .roi[data-tone="ok"]{border-color:var(--ok)}
+/* rotation trop rapide : cadre rouge qui clignote */
+.roi[data-tone="fast"]{border-color:var(--err);animation:blink .5s steps(1) infinite}
+@keyframes blink{50%{border-color:var(--paper)}}
 /* le scan tourne : pointillés qui défilent autour du cadre */
 .roi[data-tone="busy"]{border-color:transparent;
   background-image:linear-gradient(90deg,var(--paper) 50%,transparent 0),linear-gradient(90deg,var(--paper) 50%,transparent 0),
@@ -271,7 +274,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.8';
+const VERSION = 'v0.9';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -300,7 +303,7 @@ const I18N = {
     scan: ['Turn the vial', 'Slowly, either way, until the bar is full.'],
     done: ['Scan complete', 'Saved to the register. Remove the vial and insert the next one.'],
     next: ['Next vial', 'Insert the next vial in the holder.'],
-    tooFast: ['Slower', 'The vial is turning too fast for a sharp image.'],
+    tooFast: ['Too fast!', 'Slow down until the frame stops blinking red: steady and slow is what works.'],
     removed: 'Vial removed before the scan finished. Put it back to start again.',
     saved: 'Scan saved to the register', savedNoJ: 'Scan saved (label start not found)', saveFail: 'Could not save the scan: ',
     again: 'Scan saved. Run again whenever you like.', videoEnd: 'End of video: full turn not detected.',
@@ -308,7 +311,7 @@ const I18N = {
     exposure: 'Exposure', iso: 'ISO', focus: 'Focus', zoom: 'Zoom', sport: 'Sport mode (1 ms)', torch: 'Torch', refused: 'Setting refused: ',
     lensFail: 'This lens could not be opened', fpsNow: '{f} frames/s processed', langTo: 'Language: English. Switch to French',
     noTurn: ['Keep turning', 'Full turn not recognised yet. If the label has gone all the way round, press Stop: the app will finish from what it captured.'], install: 'Install the app',
-    match: 'match', finishing: 'Finishing…', partialSaved: 'Scan stopped: the raw panorama is in the register', partial: 'incomplete'
+    match: 'match', finishing: 'Finishing…',
   },
   fr: {
     tag: "Scan des étiquettes de fioles d'anticorps", start: 'Scanner', settings: 'Paramètres', register: 'Registre', close: 'Fermer',
@@ -325,7 +328,7 @@ const I18N = {
     scan: ['Tournez la fiole', "Doucement, dans un sens ou dans l'autre, jusqu'à ce que la barre soit pleine."],
     done: ['Scan terminé', 'Enregistré dans le registre. Retirez la fiole et posez la suivante.'],
     next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.'],
-    tooFast: ['Plus lentement', 'La fiole tourne trop vite pour une image nette.'],
+    tooFast: ['Trop vite !', "Ralentissez jusqu'à ce que le cadre ne clignote plus en rouge : régulier et lent, c'est ce qui marche."],
     removed: 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.',
     saved: 'Scan enregistré dans le registre', savedNoJ: "Scan enregistré (début de l'étiquette non trouvé)", saveFail: "Impossible d'enregistrer le scan : ",
     again: 'Scan enregistré. Relancez quand vous voulez.', videoEnd: 'Fin de la vidéo : tour complet non détecté.',
@@ -333,7 +336,7 @@ const I18N = {
     exposure: 'Exposition', iso: 'ISO', focus: 'Mise au point', zoom: 'Zoom', sport: 'Mode sport (1 ms)', torch: 'Lampe', refused: 'Réglage refusé : ',
     lensFail: "Impossible d'ouvrir cet objectif", fpsNow: '{f} images/s traitées', langTo: 'Langue : français. Passer en anglais',
     noTurn: ['Continuez de tourner', "Tour complet pas encore reconnu. Si l'étiquette a fait tout le tour, appuyez sur Stop : l'app finira avec ce qu'elle a capturé."], install: "Installer l'app",
-    match: 'raccord', finishing: 'Finalisation…', partialSaved: 'Scan arrêté : le panorama brut est dans le registre', partial: 'incomplet'
+    match: 'raccord', finishing: 'Finalisation…',
   }
 };
 const prefs = Object.assign({ sens: 25, autoNext: true, lang: 'en', lens: null }, store.get('prefs', {}));
@@ -665,7 +668,10 @@ function scanFrame(px){
   if (!engine) return;
   const r = engine.push(px);
   drawProgress(r);
-  if (r.tooFast) setStatus(...t('tooFast'));
+  // trop vite : cadre rouge qui clignote, avant que le suivi ne décroche (au-delà d'environ 0,35 × la largeur
+  // de la bande par image, le panorama se brouille et la circonférence devient fausse ou introuvable)
+  roiEl.dataset.tone = r.tooFast ? 'fast' : 'busy';
+  if (r.tooFast) setStatus(...t('tooFast'), 'err');
   else if (r.frames % 10 === 0) setStatus(...t(!r.period && r.extent > 8 * W ? 'noTurn' : 'scan'));
   if (r.done) finish();
 }
