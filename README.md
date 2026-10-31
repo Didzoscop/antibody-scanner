@@ -8,9 +8,12 @@ Tout le calcul se fait dans le navigateur du téléphone : aucune image n'est en
 
 ## Utiliser
 
-1. **Start scan** : l'aperçu de la caméra s'ouvre en grand.
-2. **Zone de scan** (socle vide) : placez le cadre sur la fenêtre du socle, au doigt (glisser, coins, pincer)
-   ou avec les 4 flèches en haut à droite pour régler la taille finement. La zone est mémorisée.
+L'app s'utilise en paysage, en anglais par défaut (bouton EN / FR sur l'accueil).
+
+1. **Start scan** : l'aperçu de la caméra s'ouvre en grand. Le bouton **Lens** en haut à droite change
+   d'objectif quand le téléphone en propose plusieurs.
+2. **Zone de scan** (socle vide) : placez le cadre sur la fenêtre du socle, au doigt (glisser, coins, pincer).
+   La zone est mémorisée.
 3. **Run scan** : l'app mémorise le fond, puis attend qu'une fiole soit posée.
 4. Fiole détectée : le scan démarre, les flèches invitent à tourner la fiole, la barre se remplit.
 5. Scan terminé : l'étiquette est enregistrée dans le **Registre**. Retirez la fiole et posez la suivante :

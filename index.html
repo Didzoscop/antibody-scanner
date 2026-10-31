@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,11 +10,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 @font-face{font-family:"ByteBounce";src:url("fonts/ByteBounce.ttf") format("truetype");font-display:swap}
-/* Même direction artistique que Petri·Capture (encre noire, traits épais, ombres décalées, police pixel), sur fond bleu pastel */
+/* Même direction artistique que Petri·Capture (encre noire, traits épais, ombres décalées, police pixel), sur fond bleu pastel.
+   L'app est pensée pour le paysage uniquement (téléphone couché dans le socle). */
 :root{
   --bg:#CFE4F2; --paper:#F1F7FB; --ink:#1A1A1A; --muted:#4D5D6A;
   --wait:#E0A526; --ok:#3A9A5B; --err:#D2452F; --viewer:#111;
   --b:3px; /* épaisseur des traits */
+  --sl:env(safe-area-inset-left,0px); --sr:env(safe-area-inset-right,0px);
   color-scheme:light;
 }
 *,*::before,*::after{box-sizing:border-box}
@@ -44,29 +46,36 @@ a.btn{color:inherit;text-decoration:none}
 .flag{padding:4px;min-width:44px;min-height:44px;border:var(--b) solid var(--ink);background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink);line-height:0;display:grid;place-items:center}
 .flag:active{transform:translate(var(--b),var(--b));box-shadow:none}
 .flag svg{width:22px;height:22px;display:block;shape-rendering:crispEdges}
+.flag.wide{display:flex;gap:.45rem;padding:4px .6rem;line-height:1;font-weight:600}
+/* interrupteur à deux positions (langue) */
+.seg{display:flex;border:var(--b) solid var(--ink);box-shadow:var(--b) var(--b) 0 var(--ink);background:var(--paper)}
+.seg button{border:0;background:none;min-width:48px;min-height:40px;padding:0 .6rem;font-weight:600;letter-spacing:.06em}
+.seg button+button{border-left:var(--b) solid var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 
 /* Mascotte : fiole en pixel art, dessinée image par image (mascot.js) */
 .mascot{--s:4px;flex:none;width:calc(28*var(--s));height:calc(30*var(--s))}
 .mascot canvas,.swap canvas,.spin canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
 
-/* ---------- Accueil ---------- */
-.home{position:fixed;inset:0;display:grid;place-items:center;padding:1.2rem;overflow:auto;
-  padding-top:calc(1.2rem + env(safe-area-inset-top,0px));padding-bottom:calc(1.2rem + env(safe-area-inset-bottom,0px))}
-.home-card{width:min(30rem,100%);display:flex;flex-direction:column;align-items:center;gap:1.1rem;
-  background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:1.4rem 1.4rem 1.6rem}
-.brand{text-align:center}
+/* ---------- Accueil : mascotte à gauche, actions à droite ---------- */
+.home{position:fixed;inset:0;display:grid;place-items:center;padding:1rem;overflow:auto;
+  padding-left:calc(1rem + var(--sl));padding-right:calc(1rem + var(--sr))}
+.home .lang{position:absolute;top:.8rem;right:calc(.8rem + var(--sr))}
+.home-card{width:min(42rem,100%);display:flex;align-items:center;gap:1.6rem;
+  background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:1.3rem 1.6rem}
+.home-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.9rem}
 .brand h1{font-size:1.5rem;margin:0;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .ver{font-size:.75rem;color:var(--muted)}
 .home .mascot{--s:6px}
-.home .tag{margin:-.4rem 0 0;color:var(--muted);text-align:center}
-.btn.start{width:100%;min-height:76px;font-size:1.7rem;letter-spacing:.08em;text-transform:uppercase;box-shadow:6px 6px 0 var(--muted)}
+.home .tag{margin:-.6rem 0 0;color:var(--muted)}
+.btn.start{width:100%;min-height:72px;font-size:1.7rem;letter-spacing:.08em;text-transform:uppercase;box-shadow:6px 6px 0 var(--muted)}
 .btn.start:active{transform:translate(6px,6px)}
 .nav{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;width:100%;padding:0 var(--b) var(--b) 0}
 
-/* ---------- Écran de scan : aperçu caméra presque plein écran, panneau en bas ---------- */
-.scanview{position:fixed;inset:0;display:grid;grid-template-rows:1fr auto;background:var(--bg)}
-.cam{position:relative;overflow:hidden;background:var(--viewer);touch-action:none;margin:.5rem .5rem 0;border:var(--b) solid var(--ink);
-  margin-top:calc(.5rem + env(safe-area-inset-top,0px))}
+/* ---------- Écran de scan : aperçu caméra à gauche, panneau à droite ---------- */
+.scanview{position:fixed;inset:0;display:grid;grid-template-columns:1fr clamp(220px,28vw,320px);background:var(--bg)}
+.cam{position:relative;overflow:hidden;background:var(--viewer);touch-action:none;border:var(--b) solid var(--ink);
+  margin:.5rem 0 .5rem calc(.5rem + var(--sl))}
 .cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--viewer)}
 /* zone de scan : encadrée, le reste de l'image est assombri */
 .roi{position:absolute;border:var(--b) solid var(--paper);outline:2px solid var(--ink);box-shadow:0 0 0 9999px rgba(17,17,17,.45);cursor:move}
@@ -87,38 +96,33 @@ a.btn{color:inherit;text-decoration:none}
 @keyframes ants{to{background-position:16px 0,-16px 100%,0 -16px,100% 16px}}
 .spin{position:absolute;pointer-events:none}
 .topl{position:absolute;top:.6rem;left:.6rem;display:flex;gap:.6rem}
-/* flèches de réglage fin de la taille de la zone */
-.arrows{position:absolute;top:.6rem;right:.6rem;display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:3px}
-.arrows .flag{min-width:0;min-height:0;width:44px;height:44px}
-.arrows .n{grid-area:1/2}.arrows .w{grid-area:2/1}.arrows .e{grid-area:2/3}.arrows .s{grid-area:3/2}
-.arrows .lbl{grid-area:2/2;display:grid;place-items:center;font-size:.7rem;color:var(--paper);text-align:center;line-height:1}
-.swapcard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:.8rem 1.2rem}
+.topr{position:absolute;top:.6rem;right:.6rem}
+.swapcard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:.6rem 1rem}
 .swap{width:112px;height:154px}
-.panel{background:var(--paper);border-top:5px solid var(--ink);margin-top:.5rem;padding:.7rem 1rem;
-  padding-bottom:calc(.8rem + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:.6rem}
+.panel{background:var(--paper);border-left:5px solid var(--ink);margin-left:.5rem;padding:.8rem;padding-right:calc(.8rem + var(--sr));
+  display:flex;flex-direction:column;gap:.7rem;overflow:auto}
 .panel .big{font-size:1.45rem;font-weight:700;line-height:1.1}
-.panel .small{color:var(--muted);font-size:1rem;line-height:1.25;min-height:2.5em}
-.panel .txt{display:flex;flex-direction:column;gap:.15rem}
-.panel .row{display:flex;gap:.7rem;padding:0 var(--b) var(--b) 0}
+.panel .small{color:var(--muted);font-size:1rem;line-height:1.25}
+.panel .txt{display:flex;flex-direction:column;gap:.3rem;flex:1}
+.panel .row{display:flex;padding:0 var(--b) var(--b) 0}
 .panel .row .btn{flex:1}
 .btn.run{min-height:60px;font-size:1.35rem;letter-spacing:.08em;text-transform:uppercase}
 /* barre de progression en cases pixel ; une fois le tour trouvé, chaque case est un morceau du tour */
-.progress{display:flex;align-items:center;gap:.7rem}
-.cells{flex:1;display:grid;grid-template-columns:repeat(30,1fr);gap:2px;height:26px;padding:3px;border:var(--b) solid var(--ink);background:var(--paper)}
-.cells i{background:transparent}
+.progress{display:flex;flex-direction:column;gap:.3rem}
+.cells{display:grid;grid-template-columns:repeat(15,1fr);gap:2px;padding:3px;border:var(--b) solid var(--ink);background:var(--paper)}
+.cells i{background:transparent;height:12px}
 .cells i.on{background:var(--ink)}
 .progress.found .cells i.on{background:var(--ok)}
-.progress b{min-width:3.2rem;text-align:right;font-variant-numeric:tabular-nums}
+.progress b{text-align:right;font-variant-numeric:tabular-nums}
 .err{color:var(--err)}
 
 /* ---------- Panneaux latéraux (paramètres, registre) ---------- */
 .sheet{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--paper);
   border-left:5px solid var(--ink);z-index:20;display:flex;flex-direction:column;
-  transform:translateX(105%);transition:transform .25s steps(5);
-  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  transform:translateX(105%);transition:transform .25s steps(5);padding-right:var(--sr)}
 .sheet.open{transform:none}
 @media (prefers-reduced-motion: reduce){.sheet{transition:none}}
-.sheet-head{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:5px solid var(--ink)}
+.sheet-head{display:flex;align-items:center;gap:.5rem;padding:.5rem 1rem;border-bottom:5px solid var(--ink)}
 .sheet-head h2{margin:0 auto 0 0;font-size:1.2rem;text-transform:uppercase;letter-spacing:.06em}
 .sheet-body{overflow:auto;padding:1rem;flex:1}
 .scrim{position:fixed;inset:0;background:rgba(26,26,26,.35);z-index:15;display:none}
@@ -127,7 +131,7 @@ a.btn{color:inherit;text-decoration:none}
 .group-title:first-child{margin-top:0}
 .field{margin-bottom:1.1rem}
 .field label{display:flex;justify-content:space-between;gap:1rem;font-weight:700;margin-bottom:.25rem}
-.field label span{font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.field label span+span{font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
 .note{font-size:.9rem;color:var(--muted);margin:.25rem 0 .6rem}
 .row{display:flex;gap:.6rem;flex-wrap:wrap;padding:0 var(--b) var(--b) 0}
 /* curseurs pixel : piste encadrée, partie remplie en noir (--p), poignée carrée avec ombre */
@@ -143,38 +147,57 @@ input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:24p
   border:var(--b) solid var(--ink);border-radius:0;background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink);cursor:pointer;display:grid;place-content:center}
 input[type=checkbox]:checked::before{content:'';width:12px;height:12px;background:var(--ink)}
 input[type=checkbox]:active{transform:translate(var(--b),var(--b));box-shadow:none}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:.7rem}
 .thumb{border:var(--b) solid var(--ink);overflow:hidden;background:var(--bg);padding:0;text-align:left;display:block;width:100%}
 .thumb img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#000}
 .thumb .meta{padding:.25rem .4rem;font-size:.78rem;font-variant-numeric:tabular-nums;border-top:2px solid var(--ink);background:var(--paper)}
 .empty{color:var(--muted);text-align:center;padding:2rem 1rem;display:flex;flex-direction:column;align-items:center;gap:1rem}
-dialog.pix{border:5px solid var(--ink);background:var(--paper);color:var(--ink);padding:1rem 1.2rem;width:min(34rem,94vw);max-height:94vh;overflow:auto;box-shadow:8px 8px 0 var(--ink)}
+/* fiche d'un scan : image à gauche, boutons à droite */
+dialog.pix{border:5px solid var(--ink);background:var(--paper);color:var(--ink);padding:.8rem 1rem;width:fit-content;max-width:94vw;max-height:94vh;overflow:auto;box-shadow:8px 8px 0 var(--ink)}
 dialog.pix::backdrop{background:rgba(26,26,26,.45)}
-dialog.pix h2{margin:0 0 .6rem;font-size:1.3rem;text-transform:uppercase;letter-spacing:.06em}
-dialog.pix img{display:block;max-width:100%;border:var(--b) solid var(--ink);margin:.4rem 0 .8rem}
-.toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-spacing:.06em}
+.view{display:flex;gap:1rem;align-items:flex-start}
+.view img{display:block;max-width:min(60vw,640px);max-height:calc(94vh - 5.5rem);border:var(--b) solid var(--ink)}
+.view .col{display:flex;flex-direction:column;gap:.7rem;padding:0 var(--b) var(--b) 0;min-width:9rem}
+.toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);
   background:var(--ink);color:var(--paper);padding:.5rem 1rem;z-index:40;display:none;max-width:90vw;box-shadow:var(--b) var(--b) 0 var(--muted)}
 .toast.show{display:block}
 
-@media (max-height:560px){
-  .panel{padding:.4rem .8rem;gap:.35rem}.panel .big{font-size:1.15rem}.panel .small{min-height:0;font-size:.9rem}
-  .btn.run{min-height:46px;font-size:1.1rem}.home .mascot{--s:4px}.btn.start{min-height:58px;font-size:1.35rem}
-  .arrows{grid-template-columns:repeat(3,38px);grid-template-rows:repeat(3,38px)}.arrows .flag{width:38px;height:38px}
+/* téléphone tenu en portrait : on demande de le tourner */
+.rotate{display:none;position:fixed;inset:0;z-index:60;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;gap:1.6rem;padding:2rem;text-align:center}
+.rotate p{margin:0;max-width:16rem;font-size:1.2rem;font-weight:600}
+.phone{width:46px;height:78px;border:var(--b) solid var(--ink);background:var(--paper);box-shadow:var(--b) var(--b) 0 var(--ink);padding:6px 4px 12px;animation:turn 2.4s steps(1) infinite}
+.phone::before{content:'';display:block;width:100%;height:100%;background:var(--bg);border:2px solid var(--ink)}
+@keyframes turn{50%{transform:rotate(-90deg)}}
+@media (orientation:portrait) and (pointer:coarse){.rotate{display:flex}}
+
+/* paysage sur téléphone : peu de hauteur */
+@media (max-height:520px){
+  .home{padding-top:.6rem;padding-bottom:.6rem}
+  .home-card{padding:1rem 1.3rem;gap:1.3rem}.home-main{gap:.7rem}.home .mascot{--s:5px}
+  .btn.start{min-height:58px;font-size:1.4rem}
+  .panel{padding:.6rem;padding-right:calc(.6rem + var(--sr));gap:.5rem}.panel .big{font-size:1.2rem}.panel .small{font-size:.9rem}
+  .btn.run{min-height:50px;font-size:1.15rem}
+  .swap{width:84px;height:116px}
 }
+@media (max-height:360px){.home .mascot{--s:4px}.home .tag{display:none}}
 </style>
 </head>
 <body>
 
 <section class="home" id="home">
+  <div class="seg lang" id="langSeg" role="group" aria-label="Language"><button type="button" data-lang="en">EN</button><button type="button" data-lang="fr">FR</button></div>
   <div class="home-card">
-    <div class="brand"><h1>Antibody·Scanner</h1><span class="ver" id="ver"></span></div>
     <div class="mascot" id="homeMascot" aria-hidden="true"></div>
-    <p class="tag">Scan des étiquettes de fioles d'anticorps</p>
-    <button class="btn primary start" id="btnStart" type="button">Start scan</button>
-    <nav class="nav">
-      <button class="btn" id="btnSettings" type="button">Paramètres</button>
-      <button class="btn" id="btnRegister" type="button">Registre <span class="count" id="countBadge">0</span></button>
-    </nav>
+    <div class="home-main">
+      <div class="brand"><h1>Antibody·Scanner</h1><span class="ver" id="ver"></span></div>
+      <p class="tag" data-i18n="tag"></p>
+      <button class="btn primary start" id="btnStart" type="button" data-i18n="start"></button>
+      <nav class="nav">
+        <button class="btn" id="btnSettings" type="button" data-i18n="settings"></button>
+        <button class="btn" id="btnRegister" type="button"><span data-i18n="register"></span> <span class="count" id="countBadge">0</span></button>
+      </nav>
+    </div>
   </div>
 </section>
 
@@ -184,60 +207,60 @@ dialog.pix img{display:block;max-width:100%;border:var(--b) solid var(--ink);mar
     <div class="roi hidden" id="roi"><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
     <div class="spin hidden" id="spin"></div>
     <div class="topl">
-      <button class="flag" id="btnBack" type="button" aria-label="Retour à l'accueil"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 1h2v2H4zM2 3h2v2H2zM0 5h11v1H0zM2 6h2v2H2zM4 8h2v2H4z"/><path d="M1 4h2v3H1z"/></svg></button>
-      <button class="flag" id="btnGear" type="button" aria-label="Paramètres"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 0h3v2H4zM4 9h3v2H4zM0 4h2v3H0zM9 4h2v3H9zM1 1h2v2H1zM8 1h2v2H8zM1 8h2v2H1zM8 8h2v2H8zM3 2h5v1H3zM3 8h5v1H3zM2 3h1v5H2zM8 3h1v5H8z"/></svg></button>
+      <button class="flag" id="btnBack" type="button" data-i18n-aria="back"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 1h2v2H4zM2 3h2v2H2zM0 5h11v1H0zM2 6h2v2H2zM4 8h2v2H4z"/><path d="M1 4h2v3H1z"/></svg></button>
+      <button class="flag" id="btnGear" type="button" data-i18n-aria="settings"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 0h3v2H4zM4 9h3v2H4zM0 4h2v3H0zM9 4h2v3H9zM1 1h2v2H1zM8 1h2v2H8zM1 8h2v2H1zM8 8h2v2H8zM3 2h5v1H3zM3 8h5v1H3zM2 3h1v5H2zM8 3h1v5H8z"/></svg></button>
     </div>
-    <div class="arrows" id="arrows">
-      <button class="flag n" type="button" data-d="n" aria-label="Plus haut"><svg viewBox="0 0 9 9" fill="currentColor"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
-      <button class="flag w" type="button" data-d="w" aria-label="Plus étroit"><svg viewBox="0 0 9 9" fill="currentColor" style="transform:rotate(-90deg)"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
-      <span class="lbl">taille</span>
-      <button class="flag e" type="button" data-d="e" aria-label="Plus large"><svg viewBox="0 0 9 9" fill="currentColor" style="transform:rotate(90deg)"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
-      <button class="flag s" type="button" data-d="s" aria-label="Moins haut"><svg viewBox="0 0 9 9" fill="currentColor" style="transform:rotate(180deg)"><path d="M4 1h1v1H4zM3 2h3v1H3zM2 3h5v1H2zM1 4h7v1H1zM3 5h3v3H3z"/></svg></button>
+    <div class="topr">
+      <!-- changer d'objectif (grand-angle, principal, téléobjectif…) quand le navigateur en expose plusieurs -->
+      <button class="flag wide hidden" id="btnLens" type="button"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M3 0h5v1H3zM1 1h2v1H1zM8 1h2v1H8zM0 2h1v7H0zM10 2h1v7h-1zM1 9h2v1H1zM8 9h2v1H8zM3 10h5v1H3zM4 3h3v1H4zM3 4h1v3H3zM7 4h1v3H7zM4 7h3v1H4z"/></svg><span id="lensLbl"></span></button>
     </div>
     <div class="swapcard hidden" id="swapCard"><div class="swap" id="swap" aria-hidden="true"></div></div>
   </div>
   <div class="panel">
     <div class="txt" role="status" aria-live="polite"><span class="big" id="stBig"></span><span class="small" id="stSmall"></span></div>
     <div class="progress hidden" id="progress"><div class="cells" id="cells"></div><b id="pct">0 %</b></div>
-    <div class="row"><button class="btn hidden" id="btnZone" type="button">Modifier la zone</button><button class="btn primary run" id="btnRun" type="button">Run scan</button></div>
+    <div class="row"><button class="btn primary run" id="btnRun" type="button"></button></div>
   </div>
 </section>
 
 <div class="scrim" id="scrim"></div>
-<aside class="sheet" id="sheetSettings" aria-label="Paramètres">
-  <div class="sheet-head"><h2>Paramètres</h2><button class="btn" type="button" data-close>Fermer</button></div>
+<aside class="sheet" id="sheetSettings" data-i18n-aria="settings">
+  <div class="sheet-head"><h2 data-i18n="settings"></h2><button class="btn" type="button" data-close data-i18n="close"></button></div>
   <div class="sheet-body">
-    <h3 class="group-title">Caméra</h3>
-    <p class="note" id="camNote">Les réglages de la caméra apparaissent pendant un scan.</p>
+    <h3 class="group-title" data-i18n="camera"></h3>
+    <p class="note" id="camNote" data-i18n="camLater"></p>
     <div id="camCtl"></div>
-    <h3 class="group-title">Socle</h3>
-    <div class="field"><label for="sens">Sensibilité de détection de la fiole <span id="sensVal"></span></label>
+    <h3 class="group-title" data-i18n="holder"></h3>
+    <div class="field"><label for="sens"><span data-i18n="sens"></span> <span id="sensVal"></span></label>
       <input type="range" id="sens" min="10" max="60" step="1"></div>
-    <label class="check"><input type="checkbox" id="autoNext"> Enchaîner automatiquement les fioles</label>
-    <h3 class="group-title">Zone de scan</h3>
-    <div class="row"><button class="btn" id="btnResetZone" type="button">Réinitialiser la zone</button></div>
-    <h3 class="group-title">Test</h3>
-    <p class="note">Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).</p>
-    <div class="row"><label class="btn">Tester avec une vidéo<input id="file" type="file" accept="video/*" hidden></label></div>
+    <label class="check"><input type="checkbox" id="autoNext"> <span data-i18n="autoNext"></span></label>
+    <h3 class="group-title" data-i18n="zoneTitle"></h3>
+    <div class="row"><button class="btn" id="btnResetZone" type="button" data-i18n="resetZone"></button></div>
+    <h3 class="group-title" data-i18n="test"></h3>
+    <p class="note" data-i18n="testNote"></p>
+    <div class="row"><label class="btn"><span data-i18n="testBtn"></span><input id="file" type="file" accept="video/*" hidden></label></div>
   </div>
 </aside>
-<aside class="sheet" id="sheetRegister" aria-label="Registre">
-  <div class="sheet-head"><h2>Registre</h2><button class="btn" type="button" data-close>Fermer</button></div>
+<aside class="sheet" id="sheetRegister" data-i18n-aria="register">
+  <div class="sheet-head"><h2 data-i18n="register"></h2><button class="btn" type="button" data-close data-i18n="close"></button></div>
   <div class="sheet-body"><div class="grid" id="regGrid"></div></div>
 </aside>
 
 <dialog class="pix" id="viewDlg">
   <h2 id="viewTitle"></h2>
-  <img id="viewImg" alt="Étiquette déroulée">
-  <div class="row"><a class="btn primary" id="viewDl" download>Enregistrer</a><button class="btn danger" id="viewDel" type="button">Supprimer</button><button class="btn" id="viewClose" type="button">Fermer</button></div>
+  <div class="view">
+    <img id="viewImg" alt="">
+    <div class="col"><a class="btn primary" id="viewDl" download data-i18n="save"></a><button class="btn danger" id="viewDel" type="button" data-i18n="del"></button><button class="btn" id="viewClose" type="button" data-i18n="close"></button></div>
+  </div>
 </dialog>
 <div class="toast" id="toast" role="status"></div>
+<div class="rotate" id="rotate"><div class="phone" aria-hidden="true"></div><p data-i18n="rotate"></p></div>
 
 <script src="mascot.js"></script>
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.2';
+const VERSION = 'v0.3';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -250,9 +273,69 @@ for (let i = 0; i < 30; i++) $('cells').appendChild(document.createElement('i'))
 
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2600); }
 
-/* ---------- Réglages ---------- */
-const prefs = Object.assign({ sens: 25, autoNext: true }, store.get('prefs', {}));
+/* ---------- Langue : anglais par défaut, français au choix sur l'accueil ---------- */
+const I18N = {
+  en: {
+    tag: 'Antibody vial label scanner', start: 'Start scan', settings: 'Settings', register: 'Register', close: 'Close',
+    rotate: 'Turn your phone sideways: the app works in landscape only.', back: 'Back to home', lens: 'Lens',
+    camera: 'Camera', camLater: 'Camera settings appear during a scan.', camFile: 'Test video: no camera settings.',
+    holder: 'Vial holder', sens: 'Vial detection sensitivity', autoNext: 'Chain vials automatically',
+    zoneTitle: 'Scan zone', resetZone: 'Reset zone', zoneReset: 'Zone reset',
+    test: 'Test', testNote: 'Replays a recorded video as if it were the camera (no holder detection).', testBtn: 'Test with a video',
+    regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
+    viewTitle: 'Scan of {d}', save: 'Save', del: 'Delete', delAsk: 'Delete this scan?', alt: 'Unrolled label', file: 'label',
+    run: 'Run scan', stop: 'Stop', starting: 'Starting…', camFail: 'Camera unavailable', https: ' (the page must be opened over https)',
+    zone: ['Scan zone', 'Empty holder: drag the frame onto the holder window (move, corners, pinch), then run the scan.'],
+    wait: ['Insert a vial', 'The scan starts as soon as a vial is detected in the holder.'],
+    scan: ['Turn the vial', 'Slowly, either way, until the bar is full.'],
+    done: ['Scan complete', 'Saved to the register. Remove the vial and insert the next one.'],
+    next: ['Next vial', 'Insert the next vial in the holder.'],
+    tooFast: ['Slower', 'The vial is turning too fast for a sharp image.'],
+    removed: 'Vial removed before the scan finished. Put it back to start again.',
+    saved: 'Scan saved to the register', savedNoJ: 'Scan saved (label start not found)', saveFail: 'Could not save the scan: ',
+    again: 'Scan saved. Run again whenever you like.', videoEnd: 'End of video: full turn not detected.',
+    res: 'Resolution {w}×{h}', fps: ' at {f} fps', noCtl: ' This browser cannot set exposure or focus (Safari on iPhone, for example).',
+    exposure: 'Exposure', iso: 'ISO', focus: 'Focus', zoom: 'Zoom', sport: 'Sport mode (1 ms)', torch: 'Torch', refused: 'Setting refused: ',
+    lensFail: 'This lens could not be opened'
+  },
+  fr: {
+    tag: "Scan des étiquettes de fioles d'anticorps", start: 'Scanner', settings: 'Paramètres', register: 'Registre', close: 'Fermer',
+    rotate: "Tournez le téléphone : l'app fonctionne uniquement en paysage.", back: "Retour à l'accueil", lens: 'Objectif',
+    camera: 'Caméra', camLater: 'Les réglages de la caméra apparaissent pendant un scan.', camFile: 'Vidéo de test : pas de réglages caméra.',
+    holder: 'Socle', sens: 'Sensibilité de détection de la fiole', autoNext: 'Enchaîner automatiquement les fioles',
+    zoneTitle: 'Zone de scan', resetZone: 'Réinitialiser la zone', zoneReset: 'Zone réinitialisée',
+    test: 'Test', testNote: "Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).", testBtn: 'Tester avec une vidéo',
+    regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
+    viewTitle: 'Scan du {d}', save: 'Enregistrer', del: 'Supprimer', delAsk: 'Supprimer ce scan ?', alt: 'Étiquette déroulée', file: 'etiquette',
+    run: 'Lancer le scan', stop: 'Stop', starting: 'Démarrage…', camFail: 'Caméra inaccessible', https: ' (la page doit être ouverte en https)',
+    zone: ['Zone de scan', 'Socle vide : placez le cadre sur la fenêtre du socle (glisser, coins, pincer), puis lancez le scan.'],
+    wait: ['Posez une fiole', "Le scan démarre dès qu'une fiole est détectée dans le socle."],
+    scan: ['Tournez la fiole', "Doucement, dans un sens ou dans l'autre, jusqu'à ce que la barre soit pleine."],
+    done: ['Scan terminé', 'Enregistré dans le registre. Retirez la fiole et posez la suivante.'],
+    next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.'],
+    tooFast: ['Plus lentement', 'La fiole tourne trop vite pour une image nette.'],
+    removed: 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.',
+    saved: 'Scan enregistré dans le registre', savedNoJ: "Scan enregistré (début de l'étiquette non trouvé)", saveFail: "Impossible d'enregistrer le scan : ",
+    again: 'Scan enregistré. Relancez quand vous voulez.', videoEnd: 'Fin de la vidéo : tour complet non détecté.',
+    res: 'Résolution {w}×{h}', fps: ' à {f} i/s', noCtl: " Ce navigateur ne permet pas de régler l'exposition ni la mise au point (c'est le cas de Safari sur iPhone).",
+    exposure: 'Exposition', iso: 'ISO', focus: 'Mise au point', zoom: 'Zoom', sport: 'Mode sport (1 ms)', torch: 'Lampe', refused: 'Réglage refusé : ',
+    lensFail: "Impossible d'ouvrir cet objectif"
+  }
+};
+const prefs = Object.assign({ sens: 25, autoNext: true, lang: 'en', lens: null }, store.get('prefs', {}));
 const savePrefs = () => store.set('prefs', prefs);
+const t = (k, v) => { let s = I18N[prefs.lang][k] ?? I18N.en[k]; if (v) for (const n in v) s = s.replace('{' + n + '}', v[n]); return s; };
+function applyLang(){
+  document.documentElement.lang = prefs.lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
+  document.querySelectorAll('#langSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === prefs.lang));
+  $('viewImg').alt = t('alt');
+}
+document.querySelectorAll('#langSeg button').forEach(b => b.onclick = () => { prefs.lang = b.dataset.lang; savePrefs(); applyLang(); renderRegister(); });
+applyLang();
+
+/* ---------- Réglages ---------- */
 function fillRange(r){ r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }
 $('sens').value = prefs.sens; $('sensVal').textContent = prefs.sens + ' %'; fillRange($('sens'));
 $('sens').oninput = e => { prefs.sens = +e.target.value; $('sensVal').textContent = prefs.sens + ' %'; fillRange(e.target); savePrefs(); };
@@ -279,17 +362,17 @@ const DB = {
   add(rec){ return this.tx('readwrite', s => s.add(rec)); },
   del(id){ return this.tx('readwrite', s => s.delete(id)); }
 };
-const fmtDate = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-const fileName = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `etiquette_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`; };
+const fmtDate = d => new Date(d).toLocaleString(prefs.lang === 'fr' ? 'fr-FR' : 'en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fileName = d => { d = new Date(d); const p = n => String(n).padStart(2, '0'); return `${t('file')}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`; };
 let urls = [];
 async function renderRegister(){
   let recs = [];
-  try { recs = await DB.all(); } catch (e){ $('regGrid').innerHTML = '<p class="empty">Registre indisponible sur ce navigateur.</p>'; return; }
+  try { recs = await DB.all(); } catch (e){ $('regGrid').innerHTML = `<p class="empty">${t('regFail')}</p>`; return; }
   $('countBadge').textContent = recs.length;
   if (!$('sheetRegister').classList.contains('open')) return;
   urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
   const g = $('regGrid'); g.innerHTML = '';
-  if (!recs.length){ g.innerHTML = '<div class="empty" style="grid-column:1/-1">Aucun scan pour l\'instant.</div>'; return; }
+  if (!recs.length){ g.innerHTML = `<div class="empty" style="grid-column:1/-1">${t('regNone')}</div>`; return; }
   recs.reverse().forEach(r => {
     const u = URL.createObjectURL(r.blob); urls.push(u);
     const b = document.createElement('button'); b.className = 'thumb'; b.type = 'button';
@@ -298,8 +381,8 @@ async function renderRegister(){
   });
 }
 function openScan(r, u){
-  $('viewTitle').textContent = 'Scan du ' + fmtDate(r.date); $('viewImg').src = u; $('viewDl').href = u; $('viewDl').download = fileName(r.date);
-  $('viewDel').onclick = async () => { if (!confirm('Supprimer ce scan ?')) return; await DB.del(r.id); $('viewDlg').close(); renderRegister(); };
+  $('viewTitle').textContent = t('viewTitle', { d: fmtDate(r.date) }); $('viewImg').src = u; $('viewDl').href = u; $('viewDl').download = fileName(r.date);
+  $('viewDel').onclick = async () => { if (!confirm(t('delAsk'))) return; await DB.del(r.id); $('viewDlg').close(); renderRegister(); };
   $('viewDlg').showModal();
 }
 $('viewClose').onclick = () => $('viewDlg').close();
@@ -312,7 +395,7 @@ function defaultRoi(){ // fenêtre attendue du socle : étroite, haute, au centr
   const vw = video.videoWidth, vh = video.videoHeight, h = .29 * Math.min(vw, vh), w = h * .19;
   return { x: .5 - w / vw / 2, y: .5 - h / vh / 2, w: w / vw, h: h / vh };
 }
-$('btnResetZone').onclick = () => { roi = null; store.set('roi', null); if (video.videoWidth){ roi = defaultRoi(); drawRoi(); } toast('Zone réinitialisée'); };
+$('btnResetZone').onclick = () => { roi = null; store.set('roi', null); if (video.videoWidth){ roi = defaultRoi(); drawRoi(); } toast(t('zoneReset')); };
 function videoBox(){ // rectangle affiché de la vidéo (object-fit: contain)
   const r = cam.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight, s = Math.min(r.width / vw, r.height / vh);
   return { x: (r.width - vw * s) / 2, y: (r.height - vh * s) / 2, w: vw * s, h: vh * s, left: r.left, top: r.top };
@@ -373,63 +456,78 @@ video.addEventListener('loadedmetadata', () => { if (!roi) roi = defaultRoi(); d
   cam.addEventListener('pointerup', end); cam.addEventListener('pointercancel', end);
 })();
 
-// flèches : réglage fin de la taille, centré ; appui long = répétition
-document.querySelectorAll('#arrows .flag').forEach(btn => {
-  const step = () => {
-    if (!roi || state !== 'zone') return;
-    const d = btn.dataset.d, vw = video.videoWidth, vh = video.videoHeight, cx = roi.x + roi.w / 2, cy = roi.y + roi.h / 2;
-    if (d === 'n') roi.h += 4 / vh; if (d === 's') roi.h -= 4 / vh; if (d === 'e') roi.w += 2 / vw; if (d === 'w') roi.w -= 2 / vw;
-    clampRoi(); roi.x = cx - roi.w / 2; roi.y = cy - roi.h / 2; drawRoi(); store.set('roi', roi);
-  };
-  let t1, t2;
-  btn.addEventListener('pointerdown', e => { e.preventDefault(); step(); t1 = setTimeout(() => t2 = setInterval(step, 60), 350); });
-  const stop = () => { clearTimeout(t1); clearInterval(t2); };
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
-});
-
 /* ---------- Caméra ---------- */
 let source = params.get('video') ? { kind: 'file', url: params.get('video') } : { kind: 'camera' };
-let track = null, wakeLock = null;
+let track = null, wakeLock = null, lenses = [];
 async function startSource(){
   stopSource();
   if (source.kind === 'file'){
     video.srcObject = null; video.src = source.url; video.loop = false;
     await new Promise(r => video.addEventListener('loadeddata', r, { once: true })); video.pause();
-    $('camNote').textContent = 'Vidéo de test : pas de réglages caméra.'; $('camCtl').innerHTML = '';
+    $('camNote').textContent = t('camFile'); $('camCtl').innerHTML = ''; lenses = []; updateLensBtn();
     return;
   }
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-    facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 60 } } });
+  const base = { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 60 } };
+  let stream;
+  if (prefs.lens){ // dernier objectif choisi ; s'il n'existe plus, on reprend la caméra arrière par défaut
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...base, deviceId: { exact: prefs.lens } } }); }
+    catch (e){ prefs.lens = null; savePrefs(); }
+  }
+  if (!stream) stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...base, facingMode: { ideal: 'environment' } } });
   video.removeAttribute('src'); video.srcObject = stream; await video.play();
   track = stream.getVideoTracks()[0]; buildCamControls();
+  await listLenses();
 }
 function stopSource(){
   if (video.srcObject){ video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
-  track = null; $('camCtl').innerHTML = ''; $('camNote').textContent = 'Les réglages de la caméra apparaissent pendant un scan.';
+  track = null; $('camCtl').innerHTML = ''; $('camNote').textContent = t('camLater');
 }
+// objectifs disponibles : les caméras arrière (les noms ne sont lisibles qu'une fois la caméra autorisée)
+async function listLenses(){
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && d.deviceId);
+    const back = all.filter(d => /back|rear|environment|arrière/i.test(d.label));
+    lenses = back.length ? back : all;
+  } catch (e){ lenses = []; }
+  updateLensBtn();
+}
+function lensIndex(){ const id = track && track.getSettings().deviceId; return Math.max(0, lenses.findIndex(d => d.deviceId === id)); }
+function updateLensBtn(){
+  $('btnLens').classList.toggle('hidden', state !== 'zone' || lenses.length < 2);
+  $('lensLbl').textContent = `${t('lens')} ${lensIndex() + 1}/${lenses.length}`;
+}
+$('btnLens').onclick = async () => {
+  if (state !== 'zone' || lenses.length < 2) return;
+  const prev = prefs.lens, next = lenses[(lensIndex() + 1) % lenses.length];
+  prefs.lens = next.deviceId; savePrefs();
+  try { await startSource(); }
+  catch (e){ toast(t('lensFail')); prefs.lens = prev; savePrefs(); await startSource().catch(() => {}); }
+  stopLoop(); loop(); drawRoi(); updateLensBtn();
+  if (prefs.lens === next.deviceId) toast(`${t('lens')} ${lensIndex() + 1}/${lenses.length} · ${next.label}`);
+};
 function buildCamControls(){
   const caps = track.getCapabilities ? track.getCapabilities() : {}, set = track.getSettings(), box = $('camCtl'); box.innerHTML = '';
-  $('camNote').textContent = `Résolution ${set.width}×${set.height}` + (set.frameRate ? ` à ${Math.round(set.frameRate)} i/s` : '') + '.';
-  const apply = c => track.applyConstraints({ advanced: [c] }).catch(e => toast('Réglage refusé : ' + e.message));
+  $('camNote').textContent = t('res', { w: set.width, h: set.height }) + (set.frameRate ? t('fps', { f: Math.round(set.frameRate) }) : '') + '.';
+  const apply = c => track.applyConstraints({ advanced: [c] }).catch(e => toast(t('refused') + e.message));
   const slider = (key, label, fmt, modeKey) => {
     const c = caps[key]; if (!c || c.max === undefined) return null;
     const d = document.createElement('div'); d.className = 'field';
-    d.innerHTML = `<label>${label} <span></span></label><input type="range" min="${c.min}" max="${c.max}" step="${c.step || (c.max - c.min) / 100}" value="${set[key] ?? c.min}">`;
-    const inp = d.querySelector('input'), out = d.querySelector('span'), show = () => { out.textContent = fmt(+inp.value); fillRange(inp); };
+    d.innerHTML = `<label><span>${label}</span> <span></span></label><input type="range" min="${c.min}" max="${c.max}" step="${c.step || (c.max - c.min) / 100}" value="${set[key] ?? c.min}">`;
+    const inp = d.querySelector('input'), out = d.querySelector('span+span'), show = () => { out.textContent = fmt(+inp.value); fillRange(inp); };
     inp.oninput = () => { show(); apply(modeKey ? { [modeKey]: 'manual', [key]: +inp.value } : { [key]: +inp.value }); };
     show(); box.appendChild(d); return inp;
   };
-  const exp = slider('exposureTime', 'Exposition', v => (v / 10).toFixed(1) + ' ms', 'exposureMode'); // unités de 100 µs
-  slider('iso', 'ISO', v => Math.round(v), 'exposureMode');
-  slider('focusDistance', 'Mise au point', v => v.toFixed(2), 'focusMode');
-  slider('zoom', 'Zoom', v => v.toFixed(1) + '×');
+  const exp = slider('exposureTime', t('exposure'), v => (v / 10).toFixed(1) + ' ms', 'exposureMode'); // unités de 100 µs
+  slider('iso', t('iso'), v => Math.round(v), 'exposureMode');
+  slider('focusDistance', t('focus'), v => v.toFixed(2), 'focusMode');
+  slider('zoom', t('zoom'), v => v.toFixed(1) + '×');
   const row = document.createElement('div'); row.className = 'row';
-  if (exp){ const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Mode sport (1 ms)';
+  if (exp){ const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = t('sport');
     b.onclick = () => { exp.value = Math.max(caps.exposureTime.min, Math.min(caps.exposureTime.max, 10)); exp.oninput(); }; row.appendChild(b); }
-  if (caps.torch){ let on = false; const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Lampe';
+  if (caps.torch){ let on = false; const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = t('torch');
     b.onclick = () => { on = !on; apply({ torch: on }); b.classList.toggle('primary', on); }; row.appendChild(b); }
   if (row.children.length) box.appendChild(row);
-  if (!box.children.length) $('camNote').textContent += ' Ce navigateur ne permet pas de régler l\'exposition ni la mise au point (c\'est le cas de Safari sur iPhone).';
+  if (!box.children.length) $('camNote').textContent += t('noCtl');
 }
 
 /* ---------- Déroulé du scan ----------
@@ -439,41 +537,36 @@ function buildCamControls(){
    done : scan enregistré, on attend que le socle se vide → next : on attend la fiole suivante → scan */
 let state = 'idle', engine = null, wc = null, wctx = null, W = 0, H = 0;
 const det = { bg: null, bgFrames: 0, occ: false, n: 0 };
-const TEXT = {
-  zone: ['Zone de scan', 'Socle vide : placez le cadre sur la fenêtre du socle (doigt ou flèches), puis lancez le scan.'],
-  wait: ['Posez une fiole', 'Le scan démarre dès qu\'une fiole est détectée dans le socle.'],
-  scan: ['Tournez la fiole', 'Doucement, dans un sens ou dans l\'autre, jusqu\'à ce que la barre soit pleine.'],
-  done: ['Scan terminé', 'Enregistré dans le registre. Retirez la fiole et posez la suivante.'],
-  next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.']
-};
 function setStatus(big, small, cls){ $('stBig').textContent = big; $('stSmall').textContent = small; $('stSmall').className = 'small' + (cls ? ' ' + cls : ''); }
 function setState(s, small){
-  state = s; const [b, t] = TEXT[s] || ['', '']; setStatus(b, small || t);
+  state = s; const [b, m] = I18N.en[s] ? t(s) : ['', '']; setStatus(b, small || m);
   const zone = s === 'zone';
-  $('arrows').classList.toggle('hidden', !zone);
+  updateLensBtn();
   roiEl.classList.toggle('locked', !zone);
   roiEl.dataset.tone = s === 'scan' ? 'busy' : s === 'wait' || s === 'next' ? 'wait' : s === 'done' ? 'ok' : '';
   $('spin').classList.toggle('hidden', s !== 'scan');
   $('swapCard').classList.toggle('hidden', !(s === 'done' || s === 'next'));
   $('progress').classList.toggle('hidden', !(s === 'scan' || s === 'done'));
-  $('btnRun').textContent = zone ? 'Run scan' : 'Stop';
+  $('btnRun').textContent = zone ? t('run') : t('stop');
   $('btnRun').classList.toggle('primary', zone);
-  $('btnZone').classList.add('hidden');
 }
 
 async function enterScan(){
   $('home').classList.add('hidden'); $('scan').classList.remove('hidden');
-  try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); } catch (e){}
+  // plein écran puis verrouillage en paysage (Android) ; sans attendre, car certains navigateurs ne répondent jamais.
+  // Si le verrouillage n'est pas possible, l'écran « tournez le téléphone » prend le relais.
+  try { document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.then(() => screen.orientation?.lock?.('landscape')).catch(() => {}); } catch (e){}
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e){}
-  setStatus('Démarrage…', '');
+  setStatus(t('starting'), '');
   try { await startSource(); }
-  catch (e){ setStatus('Caméra inaccessible', e.message + (isSecureContext ? '' : ' (la page doit être ouverte en https)'), 'err'); return; }
+  catch (e){ setStatus(t('camFail'), e.message + (isSecureContext ? '' : t('https')), 'err'); return; }
   if (!roi) roi = defaultRoi();
   drawRoi(); setState('zone'); loop();
 }
 function leaveScan(){
   stopLoop(); state = 'idle'; stopSource(); video.removeAttribute('src'); video.load();
   try { wakeLock && wakeLock.release(); } catch (e){} wakeLock = null;
+  try { screen.orientation?.unlock?.(); } catch (e){}
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   $('scan').classList.add('hidden'); $('home').classList.remove('hidden'); renderRegister();
 }
@@ -526,8 +619,8 @@ function scanFrame(){
   wctx.drawImage(video, roi.x * vw, roi.y * vh, roi.w * vw, roi.h * vh, 0, 0, W, H);
   const r = engine.push(wctx.getImageData(0, 0, W, H).data);
   drawProgress(r);
-  if (r.tooFast) setStatus('Plus lentement', 'La fiole tourne trop vite pour une image nette.');
-  else if (r.frames % 10 === 0) setStatus(...TEXT.scan);
+  if (r.tooFast) setStatus(...t('tooFast'));
+  else if (r.frames % 10 === 0) setStatus(...t('scan'));
   if (r.done) finish();
 }
 function drawProgress(r){
@@ -544,9 +637,9 @@ async function finish(){
   navigator.vibrate && navigator.vibrate([60, 60, 120]);
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
   try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); }
-  catch (e){ toast('Impossible d\'enregistrer le scan : ' + e.message); }
-  toast(junction ? 'Scan enregistré dans le registre' : 'Scan enregistré (début de l\'étiquette non trouvé)');
-  if (source.kind === 'file' || !prefs.autoNext){ setState('zone', 'Scan enregistré. Relancez quand vous voulez.'); return; }
+  catch (e){ toast(t('saveFail') + e.message); }
+  toast(junction ? t('saved') : t('savedNoJ'));
+  if (source.kind === 'file' || !prefs.autoNext){ setState('zone', t('again')); return; }
   setState('done');
 }
 
@@ -556,7 +649,7 @@ function tick(){
   if (state === 'idle' || source.kind === 'file' || video.readyState < 2) return;
   if (state === 'wait'){ if (detect()) startEngine(); }
   else if (state === 'scan'){
-    if (!detect()){ engine = null; setState('wait', 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.'); return; }
+    if (!detect()){ engine = null; setState('wait', t('removed')); return; }
     scanFrame();
   }
   else if (state === 'done'){ if (!detect()) setState('next'); }
@@ -573,12 +666,12 @@ function stopLoop(){
   loopId = null;
 }
 // vidéo de test : on avance image par image pour traiter chaque image, quelle que soit la vitesse de l'appareil
-function stepFile(t){
+function stepFile(ts){
   const fps = +(params.get('fps') || 60);
   if (state !== 'scan' || !engine) return;
-  if (t > video.duration){ if (engine.period) finish(); else { engine = null; setState('zone', 'Fin de la vidéo : tour complet non détecté.'); } return; }
-  video.addEventListener('seeked', () => { if (state !== 'scan' || !engine) return; scanFrame(); if (state === 'scan' && engine) stepFile(t + 1 / fps); }, { once: true });
-  video.currentTime = t;
+  if (ts > video.duration){ if (engine.period) finish(); else { engine = null; setState('zone', t('videoEnd')); } return; }
+  video.addEventListener('seeked', () => { if (state !== 'scan' || !engine) return; scanFrame(); if (state === 'scan' && engine) stepFile(ts + 1 / fps); }, { once: true });
+  video.currentTime = ts;
 }
 </script>
 </body>

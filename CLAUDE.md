@@ -39,7 +39,14 @@ police ByteBounce avec Pixelify Sans en secours. Seule différence : le fond est
 
 ## Déroulé de l'écran de scan
 
-`zone` (on règle le cadre, socle vide, au doigt ou avec les 4 flèches de taille) → « Run scan » mémorise le fond
+L'app est **en paysage uniquement** : verrouillage d'orientation en plein écran sur Android, sinon un écran
+« tournez le téléphone » couvre tout en portrait (sur écran tactile seulement). Aperçu caméra à gauche, panneau à droite.
+Langue : **anglais par défaut**, français au choix sur l'accueil (`I18N` dans index.html, `data-i18n` dans le HTML,
+`t('clé')` dans le JS ; tout nouveau texte doit exister dans les deux langues). Le bouton « Lens / Objectif » en haut
+à droite de l'aperçu fait défiler les caméras arrière exposées par le navigateur (choix mémorisé dans `prefs.lens`) ;
+il est masqué s'il n'y en a qu'une.
+
+`zone` (on règle le cadre, socle vide, au doigt : glisser, coins, pincer) → « Run scan » mémorise le fond
 → `wait` (fiole détectée quand la zone diffère du fond) → `scan` (flèches qui tournent, barre de progression)
 → `done` (scan enregistré dans le registre, animation de remplacement) → socle vidé → `next` → fiole posée → `scan`.
 La détection compare une image 12 × N en gris au fond, avec hystérésis et 6 images de confirmation ; le fond suit
