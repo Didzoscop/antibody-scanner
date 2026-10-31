@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Scan de fiole</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--muted:#5f6b7a;--line:#d9dee5;--accent:#0b6bcb;--ok:#1a7f37;--warn:#b35900;--bad:#c62828}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1b2027;--fg:#e8ecf1;--muted:#9aa6b4;--line:#2c333d;--accent:#4c9ef0;--ok:#3fb950;--warn:#e3a33a;--bad:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
+h1{font-size:18px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+#stage{position:relative;background:#000;border-radius:10px;overflow:hidden;touch-action:none}
+#video{display:block;width:100%;max-height:62vh;object-fit:contain}
+#roi{position:absolute;border:2px solid #ffd400;box-shadow:0 0 0 9999px rgba(0,0,0,.45);cursor:move}
+#roi .h{position:absolute;right:-12px;bottom:-12px;width:24px;height:24px;border-radius:50%;background:#ffd400;cursor:nwse-resize}
+#roi.locked{border-color:#3fb950;cursor:default}#roi.locked .h{display:none}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:9px;padding:10px 14px;font:inherit;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.muted{color:var(--muted);font-size:13px}
+#status{font-weight:600;min-height:1.4em}
+#status.ok{color:var(--ok)}#status.warn{color:var(--warn)}#status.bad{color:var(--bad)}
+.bar{height:14px;background:var(--line);border-radius:7px;overflow:hidden;margin:8px 0}
+.bar>div{height:100%;width:0;background:var(--accent);transition:width .15s}
+.bar.done>div{background:var(--ok)}
+#ring{width:100%;height:22px;display:block;border-radius:6px}
+#preview{width:100%;display:block;background:#000;border-radius:8px;min-height:40px}
+#result img{max-width:100%;display:block;margin:8px 0;border-radius:6px;border:1px solid var(--line)}
+details summary{cursor:pointer;font-weight:600}
+.ctl{display:grid;grid-template-columns:120px 1fr 64px;gap:8px;align-items:center;margin:8px 0}
+.ctl input[type=range]{width:100%}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Scan d'étiquette de fiole</h1>
+
+<div class="card">
+  <div id="stage"><video id="video" playsinline muted></video><div id="roi" class="hidden"><div class="h"></div></div></div>
+  <p class="muted" id="hint">Démarrez la caméra, puis placez le cadre jaune sur l'étiquette (toute sa hauteur, bandes colorées comprises).</p>
+  <div class="row">
+    <button id="btnCam" class="primary">Démarrer la caméra</button>
+    <button id="btnScan" disabled>Lancer le scan</button>
+    <button id="btnReset" disabled>Recommencer</button>
+    <label class="btn">Tester avec une vidéo<input id="file" type="file" accept="video/*" hidden></label>
+  </div>
+</div>
+
+<div class="card">
+  <div id="status">En attente</div>
+  <div class="bar" id="bar"><div></div></div>
+  <canvas id="ring" width="600" height="22"></canvas>
+  <p class="muted" id="info">Tournez la fiole doucement, dans un sens ou dans l'autre. Le scan se termine tout seul quand tout le tour a été vu.</p>
+  <canvas id="preview" height="0"></canvas>
+</div>
+
+<div class="card hidden" id="result">
+  <strong>Étiquette déroulée</strong>
+  <img id="out" alt="Étiquette déroulée">
+  <div class="row"><a class="btn" id="dl" download>Enregistrer l'image</a><button id="btnAgain">Nouveau scan</button></div>
+  <p class="muted" id="resInfo"></p>
+</div>
+
+<div class="card">
+  <details id="camCtl"><summary>Réglages caméra</summary>
+    <p class="muted" id="capInfo">Démarrez la caméra pour voir les réglages disponibles.</p>
+    <div class="row"><button id="btnSport" class="hidden">Mode sport (exposition courte)</button></div>
+    <div id="ctls"></div>
+  </details>
+</div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const video = $("video"), roiEl = $("roi"), stage = $("stage");
+const params = new URLSearchParams(location.search);
+
+/* ---------- Zone d'intérêt (fractions de l'image vidéo) ---------- */
+let roi = {x: .42, y: .28, w: .16, h: .4};
+try { const s = JSON.parse(localStorage.getItem("roi")); if (s && s.w) roi = s; } catch (e) {}
+if (params.get("roi")) { const v = params.get("roi").split(",").map(Number); roi = {x: v[0], y: v[1], w: v[2], h: v[3]}; }
+
+function videoBox() { // rectangle affiché de la vidéo (object-fit: contain)
+  const r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight;
+  const s = Math.min(r.width / vw, r.height / vh);
+  return {x: (r.width - vw * s) / 2, y: (r.height - vh * s) / 2, w: vw * s, h: vh * s};
+}
+function drawRoi() {
+  if (!video.videoWidth) return;
+  const b = videoBox();
+  Object.assign(roiEl.style, {left: b.x + roi.x * b.w + "px", top: b.y + roi.y * b.h + "px",
+    width: roi.w * b.w + "px", height: roi.h * b.h + "px"});
+  roiEl.classList.remove("hidden");
+}
+window.addEventListener("resize", drawRoi);
+video.addEventListener("loadedmetadata", drawRoi);
+(() => {
+  let drag = null;
+  roiEl.addEventListener("pointerdown", e => {
+    if (scanning) return;
+    roiEl.setPointerCapture(e.pointerId);
+    drag = {resize: e.target.classList.contains("h"), x: e.clientX, y: e.clientY, r: {...roi}};
+  });
+  roiEl.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const b = videoBox(), dx = (e.clientX - drag.x) / b.w, dy = (e.clientY - drag.y) / b.h, r = drag.r;
+    if (drag.resize) { roi.w = Math.max(.01, Math.min(1 - r.x, r.w + dx)); roi.h = Math.max(.02, Math.min(1 - r.y, r.h + dy)); }
+    else { roi.x = Math.max(0, Math.min(1 - r.w, r.x + dx)); roi.y = Math.max(0, Math.min(1 - r.h, r.y + dy)); }
+    drawRoi();
+  });
+  const end = () => { if (drag) { drag = null; try { localStorage.setItem("roi", JSON.stringify(roi)); } catch (e) {} } };
+  roiEl.addEventListener("pointerup", end); roiEl.addEventListener("pointercancel", end);
+})();
+
+/* ---------- Caméra et réglages ---------- */
+let track = null;
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: false, video: {
+      facingMode: {ideal: "environment"}, width: {ideal: 3840}, height: {ideal: 2160}, frameRate: {ideal: 60}}});
+    video.srcObject = stream; video.src = ""; await video.play();
+    track = stream.getVideoTracks()[0];
+    buildControls();
+    ready();
+  } catch (e) {
+    setStatus("Caméra inaccessible : " + e.message + (isSecureContext ? "" : " (la page doit être ouverte en https)"), "bad");
+  }
+}
+function buildControls() {
+  const caps = track.getCapabilities ? track.getCapabilities() : {}, set = track.getSettings();
+  const box = $("ctls"); box.innerHTML = "";
+  $("capInfo").textContent = `Résolution ${set.width}×${set.height}` + (set.frameRate ? ` à ${Math.round(set.frameRate)} i/s` : "") + ".";
+  const apply = c => track.applyConstraints({advanced: [c]}).catch(e => setStatus("Réglage refusé : " + e.message, "warn"));
+  const slider = (key, label, fmt, modeKey) => {
+    const c = caps[key]; if (!c || c.max === undefined) return;
+    const d = document.createElement("div"); d.className = "ctl";
+    d.innerHTML = `<span>${label}</span><input type="range" min="${c.min}" max="${c.max}" step="${c.step || (c.max - c.min) / 100}" value="${set[key] ?? c.min}"><span></span>`;
+    const inp = d.children[1], out = d.children[2], show = () => out.textContent = fmt(+inp.value);
+    inp.oninput = () => { show(); apply(modeKey ? {[modeKey]: "manual", [key]: +inp.value} : {[key]: +inp.value}); };
+    show(); box.appendChild(d); return inp;
+  };
+  const exp = slider("exposureTime", "Exposition", v => (v / 10).toFixed(1) + " ms", "exposureMode");
+  slider("iso", "ISO", v => Math.round(v), "exposureMode");
+  slider("focusDistance", "Mise au point", v => v.toFixed(2), "focusMode");
+  slider("zoom", "Zoom", v => v.toFixed(1) + "×");
+  if (caps.torch) {
+    const b = document.createElement("button"); let on = false; b.textContent = "Lampe";
+    b.onclick = () => { on = !on; apply({torch: on}); b.classList.toggle("primary", on); }; box.appendChild(b);
+  }
+  if (exp) { // exposureTime est exprimé en unités de 100 µs
+    const sport = $("btnSport"); sport.classList.remove("hidden");
+    sport.onclick = () => { const v = Math.max(caps.exposureTime.min, Math.min(caps.exposureTime.max, 10)); exp.value = v; exp.oninput(); };
+  }
+  if (!box.children.length) $("capInfo").textContent += " Ce navigateur ne permet pas de régler l'exposition ni la mise au point (c'est le cas de Safari sur iPhone).";
+}
+
+/* ---------- Moteur de scan ---------- */
+const CAP = 12000, OFF = 6000;           // colonnes du panorama, origine au centre
+let scanning = false, W, H, W2, H2, scale;
+let wc, wctx, mos, gm, best, filled, prevGx, pos, ypos, lastDx, lastDy, frames, sharpHist, umin, umax, closures, period, rejected;
+const MARGIN = 6;
+
+function ready() {
+  $("btnScan").disabled = false; $("btnReset").disabled = false; $("btnCam").textContent = "Caméra active";
+  $("hint").textContent = "Placez le cadre jaune sur l'étiquette (toute sa hauteur), puis lancez le scan.";
+  setStatus("Prêt", ""); drawRoi();
+}
+function setStatus(t, cls) { const s = $("status"); s.textContent = t; s.className = cls || ""; }
+
+function resetScan() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const rw = Math.round(roi.w * vw), rh = Math.round(roi.h * vh);
+  scale = Math.min(1, 720 / rh);                      // on plafonne la hauteur de travail
+  W = Math.max(16, Math.round(rw * scale) & ~1); H = Math.max(16, Math.round(rh * scale) & ~1); W2 = W >> 1; H2 = H >> 1;
+  wc = document.createElement("canvas"); wc.width = W; wc.height = H; wctx = wc.getContext("2d", {willReadFrequently: true});
+  mos = new Uint8ClampedArray(CAP * H * 4);           // panorama RGBA, rangée par rangée
+  gm = new Float32Array(CAP * H2);                     // panorama en niveaux de gris demi-résolution, colonne par colonne
+  best = new Float32Array(CAP).fill(-1e9); filled = new Uint8Array(CAP);
+  prevGx = null; pos = 0; ypos = 0; lastDx = 0; lastDy = 0; frames = 0; sharpHist = []; umin = 1e9; umax = -1e9;
+  closures = []; period = 0; rejected = 0;
+  $("result").classList.add("hidden"); $("bar").classList.remove("done"); $("bar").firstElementChild.style.width = "0";
+  const p = $("preview"); p.width = 10; p.height = 0; drawRing();
+}
+
+// zone d'intérêt -> RGBA, gris (toutes les colonnes, une ligne sur deux) et son gradient horizontal
+function grab() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  wctx.drawImage(video, roi.x * vw, roi.y * vh, roi.w * vw, roi.h * vh, 0, 0, W, H);
+  const px = wctx.getImageData(0, 0, W, H).data;
+  const g = new Float32Array(W * H2), fx = new Float32Array(W * H2); let sharp = 0;
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W; x++) {
+    const i = ((2 * y) * W + x) * 4, j = i + W * 4;
+    g[y * W + x] = (px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114 + px[j] * .299 + px[j + 1] * .587 + px[j + 2] * .114) / 2;
+  }
+  for (let y = 0; y < H2; y++) for (let x = 1; x < W - 1; x++) { const v = g[y * W + x + 1] - g[y * W + x - 1]; fx[y * W + x] = v; sharp += Math.abs(v); }
+  return {px, g, fx, sharp: sharp / (W * H2)};
+}
+
+// Position absolue de l'image dans le panorama, cherchée autour de la prédiction :
+// l'erreur ne s'accumule pas d'une image à l'autre, contrairement à un suivi image par image.
+function registerMosaic(fx, pred) {
+  const p0 = Math.round(pred), yo2 = Math.round(ypos / 2), R = 4, rows = [];
+  for (let y = R + 2; y < H2 - R - 2; y += 2) rows.push(y);
+  const cost = new Map(); let bestC = Infinity, bp = 0, bd = 0;
+  for (let dp = -8; dp <= 8; dp++) for (let dy = -3; dy <= 3; dy++) {
+    const p = p0 + dp; let s = 0, n = 0;
+    for (let x = MARGIN; x < W - MARGIN; x++) {
+      const u = x - p + OFF; if (!filled[u - 1] || !filled[u + 1]) continue;
+      const a = (u + 1) * H2 - yo2 - dy, b = (u - 1) * H2 - yo2 - dy;
+      for (const y of rows) { const d = fx[y * W + x] - (gm[a + y] - gm[b + y]); s += d * d; }
+      n++;
+    }
+    if (n < (W - 2 * MARGIN) * .35) continue;
+    const c = s / n; cost.set(dp + "," + dy, c);
+    if (c < bestC) { bestC = c; bp = dp; bd = dy; }
+  }
+  if (bestC === Infinity) return null;
+  const l = cost.get((bp - 1) + "," + bd), r = cost.get((bp + 1) + "," + bd);
+  let sub = 0; if (l !== undefined && r !== undefined) { const den = l - 2 * bestC + r; if (den > 0) sub = .5 * (l - r) / den; }
+  return {pos: p0 + bp + sub, ypos: 2 * (yo2 + bd)};
+}
+
+// Décalage (dx, dy) tel que cur[y][x] ≈ prev[y-dy][x-dx] ; a et b sont des gradients W × H2
+// (dx en pixels pleine résolution, dy en lignes demi-résolution). Recherche autour du dernier mouvement.
+function register(a, b) {
+  const S = Math.round(W * .45), D = 3;
+  const c0 = Math.round(lastDx), lo = Math.max(-S, c0 - 14), hi = Math.min(S, c0 + 14);
+  const cost = new Map(); let bestC = Infinity, bx = 0, by = 0;
+  for (let dy = -D; dy <= D; dy++) for (let dx = lo; dx <= hi; dx++) {
+    const x0 = Math.max(1, 1 + dx), x1 = Math.min(W - 1, W - 1 + dx), y0 = Math.max(0, dy), y1 = Math.min(H2, H2 + dy);
+    if (x1 - x0 < W * .45) continue;
+    let s = 0, n = 0;
+    for (let y = y0; y < y1; y += 2) { const ra = (y - dy) * W - dx, rb = y * W; for (let x = x0; x < x1; x++) { const d = b[rb + x] - a[ra + x]; s += d * d; } n += x1 - x0; }
+    const c = s / n; cost.set(dx + "," + dy, c);
+    if (c < bestC) { bestC = c; bx = dx; by = dy; }
+  }
+  const l = cost.get((bx - 1) + "," + by), r = cost.get((bx + 1) + "," + by);
+  let sub = 0; if (l !== undefined && r !== undefined) { const den = l - 2 * bestC + r; if (den > 0) sub = .5 * (l - r) / den; }
+  return {dx: bx + sub, dy: 2 * by};
+}
+
+function median(a) { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; }
+
+function processFrame() {
+  const f = grab(); frames++;
+  if (prevGx) {
+    const r = register(prevGx, f.fx);                  // estimation grossière image par image…
+    const m = umax > umin ? registerMosaic(f.fx, pos + r.dx) : null;   // …affinée sur le panorama
+    if (m) { lastDx = m.pos - pos; pos = m.pos; ypos = m.ypos; }
+    else { pos += r.dx; ypos += r.dy; lastDx = r.dx; }
+  }
+  prevGx = f.fx;
+  sharpHist.push(f.sharp); if (sharpHist.length > 45) sharpHist.shift();
+  const med = median(sharpHist);
+  const tooFast = Math.abs(lastDx) > W * .3;
+  // les images floues (à-coups de rotation) n'entrent pas dans le panorama
+  if (frames > 3 && f.sharp < .6 * med) rejected++;
+  else writeColumns(f, Math.log(f.sharp / med));
+  if (!period && frames % 2 === 0 && umax - umin > 2.5 * W) checkClosure(f);
+  updateUi(tooFast);
+  if (period && coverage() >= .995) finish();
+}
+
+function writeColumns(f, imgScore) {
+  const yo = Math.round(ypos), yo2 = Math.round(ypos / 2);
+  for (let x = MARGIN; x < W - MARGIN; x++) {
+    const u = Math.round(x - pos) + OFF; if (u < 1 || u >= CAP - 1) continue;
+    const s = -Math.abs(x - W / 2) / (W / 2) + imgScore;
+    if (s <= best[u]) continue;
+    best[u] = s; filled[u] = 1; if (u < umin) umin = u; if (u > umax) umax = u;
+    for (let y = 0; y < H; y++) {           // ligne du panorama = ligne de l'image - ypos
+      const fy = y + yo, o = (y * CAP + u) * 4;
+      if (fy < 0 || fy >= H) { mos[o + 3] = 0; continue; }
+      const i = (fy * W + x) * 4; mos[o] = f.px[i]; mos[o + 1] = f.px[i + 1]; mos[o + 2] = f.px[i + 2]; mos[o + 3] = 255;
+    }
+    for (let y = 0; y < H2; y++) { const fy = Math.min(H2 - 1, Math.max(0, y + yo2)); gm[u * H2 + y] = f.g[fy * W + x]; }
+  }
+}
+
+// Fermeture de boucle : l'image en cours ressemble-t-elle à une zone du panorama vue loin d'ici ?
+function checkClosure(f) {
+  const yo2 = Math.round(ypos / 2), cols = [];
+  for (let x = MARGIN; x < W - MARGIN; x += 2) cols.push(x);
+  const ucur = Math.round(cols[0] - pos) + OFF;   // colonne du panorama sous la 1re colonne comparée
+  const fa = [], R = 6, ys = [];
+  for (let y = R + 2; y < H2 - R - 2; y += 2) ys.push(y);
+  for (const x of cols) for (const y of ys) { const fy = Math.min(H2 - 1, Math.max(0, y + yo2)); fa.push(f.fx[fy * W + x]); }
+  let fn = 0; for (const v of fa) fn += v * v; if (fn === 0) return;
+  let top = {c: -1}, all = [];
+  for (let u0 = umin + 2; u0 + 2 * cols.length + 2 < umax; u0 += 2) {
+    if (Math.abs(u0 - ucur) < 2 * W) continue;
+    let ok = true; for (let k = 0; k < cols.length; k++) if (!filled[u0 + 2 * k - 1] || !filled[u0 + 2 * k + 1]) { ok = false; break; }
+    if (!ok) continue;
+    for (let dy = -R; dy <= R; dy++) {
+      let s = 0, n2 = 0, i = 0;
+      for (let k = 0; k < cols.length; k++) {
+        const ua = (u0 + 2 * k + 1) * H2, ub = (u0 + 2 * k - 1) * H2;
+        for (const y of ys) { const m = gm[ua + y + dy] - gm[ub + y + dy]; s += fa[i++] * m; n2 += m * m; }
+      }
+      const c = s / Math.sqrt(fn * n2 + 1e-9);
+      if (c > top.c) top = {c, u0};
+      all.push({c, u0});
+    }
+  }
+  if (top.c < .4) return;
+  const second = all.reduce((m, v) => Math.abs(v.u0 - top.u0) > 10 && v.c > m ? v.c : m, -1);
+  if (top.c - second < .08) return;
+  const P = ucur - top.u0;
+  if (Math.abs(P) <= 2 * W) return;
+  // il faut deux détections concordantes parmi les dernières pour valider le tour
+  const agree = closures.slice(-4).filter(q => Math.abs(q - P) <= 4);
+  closures.push(P);
+  if (agree.length) {
+    period = Math.abs(Math.round((agree[agree.length - 1] + P) / 2));
+    navigator.vibrate && navigator.vibrate(60);
+  }
+}
+
+function coverage() {
+  const seen = new Uint8Array(period);
+  for (let u = umin; u <= umax; u++) if (filled[u]) seen[((u - OFF) % period + period) % period] = 1;
+  let n = 0; for (const v of seen) n += v; return n / period;
+}
+
+function drawRing() {
+  const c = $("ring"), x = c.getContext("2d"); x.clearRect(0, 0, c.width, c.height);
+  x.fillStyle = getComputedStyle(document.body).getPropertyValue("--line"); x.fillRect(0, 0, c.width, c.height);
+  if (!period) return;
+  x.fillStyle = getComputedStyle(document.body).getPropertyValue("--ok");
+  for (let u = umin; u <= umax; u++) if (filled[u]) { const k = ((u - OFF) % period + period) % period; x.fillRect(k / period * c.width, 0, c.width / period + 1, c.height); }
+}
+
+function updateUi(tooFast) {
+  if (frames % 3) return;
+  const ext = Math.max(0, umax - umin + 1), bar = $("bar").firstElementChild;
+  if (period) {
+    const cov = coverage(); bar.style.width = (cov * 100).toFixed(0) + "%";
+    setStatus(`Tour détecté : ${(cov * 100).toFixed(0)} % couvert, continuez sur les zones grises`, tooFast ? "warn" : "ok");
+  } else {
+    bar.style.width = Math.min(60, ext / (8 * W) * 60) + "%";
+    setStatus(tooFast ? "Plus lentement" : "Tournez… recherche du tour complet", tooFast ? "warn" : "");
+  }
+  $("info").textContent = `${frames} images, ${rejected} floues ignorées, ${ext} px capturés` + (period ? `, circonférence ${period} px` : "");
+  drawRing(); drawPreview();
+}
+
+function drawPreview() {
+  if (umax < umin) return;
+  const ext = umax - umin + 1, p = $("preview");
+  if (p.width !== ext || p.height !== H) { p.width = ext; p.height = H; }
+  const img = new ImageData(ext, H);
+  for (let y = 0; y < H; y++) img.data.set(mos.subarray((y * CAP + umin) * 4, (y * CAP + umax + 1) * 4), y * ext * 4);
+  p.getContext("2d").putImageData(img, 0, 0);
+}
+
+/* ---------- Mise à plat finale ---------- */
+function finish() {
+  stopLoop(); scanning = false; roiEl.classList.remove("locked");
+  const P = period;
+  // jonction début/fin : colonne sombre sur presque toute la hauteur
+  const dark = new Float32Array(CAP), y0 = Math.round(H * .05), y1 = Math.round(H * .95), col = [];
+  for (let u = umin; u <= umax; u++) {
+    if (!filled[u]) continue; col.length = 0;
+    for (let y = y0; y < y1; y += 2) { const o = (y * CAP + u) * 4; col.push(255 - (mos[o] * .299 + mos[o + 1] * .587 + mos[o + 2] * .114)); }
+    dark[u] = median(col);
+  }
+  const sm = new Float32Array(CAP);
+  for (let u = umin + 2; u <= umax - 2; u++) sm[u] = (dark[u - 2] + dark[u - 1] + dark[u] + dark[u + 1] + dark[u + 2]) / 5;
+  let pk = umin + 2; for (let u = umin + 2; u <= umax - 2; u++) if (sm[u] > sm[pk]) pk = u;
+  const vals = []; for (let u = umin; u <= umax; u++) if (filled[u]) vals.push(sm[u]);
+  const base = median(vals); let start = umin, len = P, junction = false;
+  if (sm[pk] - base > 25) {
+    const th = (sm[pk] + base) / 2; let l = pk, r = pk;
+    while (l > umin && sm[l - 1] > th) l--; while (r < umax && sm[r + 1] > th) r++;
+    junction = true; start = r + 1; len = P - (r - l + 1);
+    while (start - P >= umin) start -= P;            // occurrence la plus à gauche
+  }
+  // une colonne x du résultat vient de x, ou de x - P (même endroit, un tour plus tôt) si x dépasse le panorama
+  const src = x => { if (x <= umax && filled[x]) return x; if (filled[x - P]) return x - P; if (filled[x + P]) return x + P; return -1; };
+  // décalage vertical entre les deux passages, mesuré sur la zone vue deux fois
+  let shift = 0;
+  const seam = Math.min(umax, start + len - 1) - 20;
+  if (start + len - 1 > umax) {
+    let bestC = -2;
+    for (let dy = -12; dy <= 12; dy++) {
+      let s = 0, na = 0, nb = 0;
+      for (let u = seam - 40; u < seam; u++) {
+        if (!filled[u] || !filled[u - P]) continue;
+        for (let y = 14; y < H2 - 14; y++) { const a = gm[u * H2 + y], b = gm[(u - P) * H2 + y + dy]; s += a * b; na += a * a; nb += b * b; }
+      }
+      const c = s / Math.sqrt(na * nb + 1e-9); if (c > bestC) { bestC = c; shift = 2 * dy; }
+    }
+  }
+  const out = document.createElement("canvas"); out.width = len; out.height = H;
+  const img = new ImageData(len, H);
+  for (let k = 0; k < len; k++) {
+    const x = start + k, cut = x > seam && start + len - 1 > umax, u = cut ? (filled[x - P] ? x - P : src(x)) : src(x);
+    if (u < 0) continue;
+    const dy = u < x ? shift : 0;
+    for (let y = 0; y < H; y++) { const sy = Math.min(H - 1, Math.max(0, y + dy)), o = (sy * CAP + u) * 4, d = (y * len + k) * 4;
+      img.data[d] = mos[o]; img.data[d + 1] = mos[o + 1]; img.data[d + 2] = mos[o + 2]; img.data[d + 3] = 255; }
+  }
+  out.getContext("2d").putImageData(img, 0, 0);
+  const url = out.toDataURL("image/png");
+  $("out").src = url; $("dl").href = url;
+  const t = new Date(), pad = n => String(n).padStart(2, "0");
+  $("dl").download = `etiquette_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}_${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}.png`;
+  $("resInfo").textContent = `${len} × ${H} px. ` + (junction ? "Début et fin de l'étiquette détectés." : "Jonction de l'étiquette non trouvée : l'image commence à un endroit arbitraire.");
+  $("result").classList.remove("hidden"); $("bar").classList.add("done"); $("bar").firstElementChild.style.width = "100%";
+  setStatus("Scan terminé", "ok"); $("btnScan").textContent = "Lancer le scan";
+  $("result").scrollIntoView({behavior: "smooth"});
+}
+
+/* ---------- Boucle ---------- */
+let loopId = null, loopKind = null;
+function loop() {
+  if (!scanning) return;
+  if (video.readyState >= 2) processFrame();
+  if (!scanning) return;
+  if (video.requestVideoFrameCallback) { loopKind = "v"; loopId = video.requestVideoFrameCallback(loop); }
+  else { loopKind = "r"; loopId = requestAnimationFrame(loop); }
+}
+function stopLoop() {
+  if (loopId === null) return;
+  if (loopKind === "v") video.cancelVideoFrameCallback(loopId); else cancelAnimationFrame(loopId);
+  loopId = null;
+}
+function startScan() {
+  resetScan(); scanning = true; roiEl.classList.add("locked");
+  $("btnScan").textContent = "Arrêter"; setStatus("Tournez la fiole…", "");
+  if (video.srcObject) loop(); else stepFile(0);
+}
+// Vidéo de test : on avance image par image pour traiter chaque image, quelle que soit la vitesse de l'appareil
+function stepFile(t) {
+  const fps = +(params.get("fps") || 60);
+  if (!scanning) return;
+  if (t > video.duration) { if (period) finish(); else stopScan(); return; }
+  video.addEventListener("seeked", () => { if (!scanning) return; processFrame(); if (scanning) stepFile(t + 1 / fps); }, {once: true});
+  video.currentTime = t;
+}
+function stopScan() {
+  stopLoop(); scanning = false; roiEl.classList.remove("locked"); $("btnScan").textContent = "Lancer le scan";
+  setStatus(period ? "Scan arrêté avant d'avoir couvert tout le tour" : "Scan arrêté : tour complet non détecté", "warn");
+}
+
+$("btnCam").onclick = startCamera;
+$("btnScan").onclick = () => scanning ? stopScan() : startScan();
+$("btnReset").onclick = () => { if (scanning) stopScan(); resetScan(); setStatus("Prêt", ""); };
+$("btnAgain").onclick = () => { resetScan(); startScan(); };
+
+function loadVideo(src) {
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  video.src = src; video.loop = false;
+  video.addEventListener("loadeddata", () => { video.pause(); ready(); $("hint").textContent = "Vidéo chargée. Ajustez le cadre jaune sur l'étiquette, puis lancez le scan."; }, {once: true});
+}
+$("file").onchange = e => { const f = e.target.files[0]; if (f) loadVideo(URL.createObjectURL(f)); };
+if (params.get("video")) loadVideo(params.get("video"));
+</script>
+</body>
+</html>
