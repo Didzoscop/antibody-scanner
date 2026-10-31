@@ -71,7 +71,26 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
 ## Algorithme (engine.js)
 
 1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
-   localStorage. La hauteur de travail est plafonnée à 720 px.
+   localStorage. La hauteur de travail est plafonnée à 480 px.
+   - **Vidéo brute de l'utilisateur (v0.10)** : fiole tenue par le haut, tournée aux doigts, 4K 30 i/s, 16 s
+     (pas dans le dépôt, trop lourde). Trois défauts trouvés et corrigés :
+     1. **Emballement du suivi** : la recherche image par image ne regardait qu'autour de la vitesse précédente
+        (±14 px). Après un à-coup, la vitesse estimée montait (40–70 px/image pour ~20 réels), la vraie valeur
+        sortait de la fenêtre et l'erreur s'entretenait : lettres répétées « cccccc » dans le panorama.
+        Correction : `coarseShift`, recherche à demi-résolution sur toute la plage à chaque image, avec une
+        continuité douce (coût × (1 + κ (écart/largeur)²), κ = 4). Sans continuité, la vidéo de test donne une
+        circonférence 7 % trop courte ; avec une fenêtre stricte, la vidéo de l'utilisateur s'emballe.
+     2. **Décalage vertical entre deux tours** de 20 à 50 px (main) : recherche verticale du tour portée à
+        ±16 lignes (±32 px), avec une colonne sur 4 et une ligne sur 8 pour garder le coût. Confirmation rapide
+        d'un tour repéré : la recherche suivante ne regarde qu'autour de cette période (`hintP`).
+     3. **Trou jamais comblé** : une zone vue seulement floue (pendant un à-coup) restait vide et le scan ne
+        finissait jamais. Les images floues remplissent maintenant les colonnes vides, en plus basse priorité.
+     Autres : panorama de 12 000 colonnes (circonférence ~2300 px en 4K de près), circonférence minimale de
+     3 largeurs de bande (une fausse période de 242 px apparaissait), hauteur de travail plafonnée à 480 px
+     (2,5× plus rapide), secours à l'arrêt avec seuil relatif, courbe lissée et recouvrement ≥ 0,3 P.
+     Résultats : vidéo de l'utilisateur, tour reconnu à 8,9 s, P = 1560 (attendu ~1550 à 480 px de haut,
+     diamètre ~728 px en 4K), étiquette lisible (lot TA0225, exp 06 2028) ; vidéo de test, P = 456 (≈ 587 × 480/630).
+     Limite : cette étiquette fait tout le tour sans espace visible, la coupe est approximative.
    - **Vitesse** : le suivi tient jusqu'à ~0,3 × la largeur de la bande par image (simulation, bande de 60 px :
      16 px/image OK, 22 px → circonférence fausse, 30 px → bloqué). Au-delà, le panorama se brouille.
      Le cadre clignote en rouge dès 0,2 × la largeur (« Trop vite ! »). Une bande plus étroite tolère donc moins

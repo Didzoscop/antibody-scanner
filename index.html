@@ -274,7 +274,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.9';
+const VERSION = 'v0.10';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -622,7 +622,9 @@ let crop = null;   // rectangle lu dans l'image vidéo (pixels)
 function setupCrop(){
   const vw = video.videoWidth, vh = video.videoHeight, rw = roi.w * vw, rh = roi.h * vh, cw = Math.min(rw, MAX_ASPECT * rh);
   crop = { x: Math.round(roi.x * vw + (rw - cw) / 2), y: Math.round(roi.y * vh), w: Math.max(8, Math.round(cw)), h: Math.round(rh) };
-  const k = Math.min(1, 720 / crop.h);
+  // hauteur de travail plafonnée à 480 px : deux fois moins de calcul qu'à 720, donc assez d'images par seconde
+  // sur téléphone pour suivre une rotation à la main (à 15 images/s, les à-coups dépassent ce qui est mesurable)
+  const k = Math.min(1, 480 / crop.h);
   W = Math.max(16, Math.round(crop.w * k) & ~1); H = Math.max(16, Math.round(crop.h * k) & ~1);
   wc = document.createElement('canvas'); wc.width = W; wc.height = H; wctx = wc.getContext('2d');
 }
