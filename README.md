@@ -4,6 +4,10 @@ Web app qui filme la fiole en rotation, assemble l'étiquette comme un panorama,
 complet et sort l'étiquette à plat, recadrée de bord à bord. Tout le calcul se fait dans le
 navigateur du téléphone : aucune image n'est envoyée ailleurs.
 
+**App en ligne : https://didzoscop.github.io/antibody-scanner/** (s'ouvre directement sur le téléphone).
+
+Le dossier `tools/` contient les prototypes Python (OpenCV) qui ont validé l'approche, et `docs/` des résultats.
+
 ## Lancer
 
 Sur le PC (Node.js requis) :

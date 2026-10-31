@@ -1,0 +1,97 @@
+# Antibody scanner : contexte du projet
+
+L'utilisateur parle français : répondre en français.
+
+## But
+
+Scanner l'étiquette d'une fiole d'anticorps (cytométrie) avec un téléphone fixé dans un support
+imprimé en 3D. On tourne la fiole à la main devant la caméra. L'app assemble l'étiquette comme un
+panorama, détecte que tout le tour a été vu et sort l'étiquette à plat, de bord à bord.
+
+À terme, il faudra extraire : **marqueur, fluorochrome, fabricant, lot, numéro de catalogue**.
+Cette étape n'est pas commencée : la v1 s'arrête à l'image à plat, par choix de l'utilisateur.
+
+## Contraintes du montage
+
+- Le téléphone et la fiole sont fixes : **pas de mouvement en x, y, z une fois le socle imprimé**.
+  En revanche, la rotation manuelle est irrégulière, avec des allers-retours et des à-coups.
+- La fiole est verticale et le texte horizontal, donc la rotation fait défiler l'étiquette horizontalement.
+- La caméra voit la fiole à travers une fenêtre étroite du support : environ 118 px de large sur 630 px
+  de haut dans une image 4K.
+- Le diamètre des fioles varie : **ne jamais supposer de circonférence**, la mesurer par fermeture de boucle.
+- Plateforme : **Android en priorité**, iPhone ensuite. Safari sur iPhone ne permet ni de régler
+  l'exposition ni la mise au point, donc le « mode sport » sur iPhone demandera une app native (Swift).
+
+## Fichiers
+
+- `index.html` : toute l'app (HTML, CSS et JS dans un seul fichier, sans dépendance).
+  Elle est publiée par GitHub Pages sur https://didzoscop.github.io/antibody-scanner/ et se met à jour
+  à chaque push sur `main`.
+- `serve.js` : serveur local pour tester. `http://localhost:8080` sur le PC, et
+  `https://<IP>:8443` pour un téléphone sur le même Wi-Fi (certificat auto-signé généré dans `cert/`,
+  à ne jamais commiter). `TEST_VIDEO=chemin.mp4 node serve.js` sert en plus une vidéo sur `/test.mp4`.
+- `tools/*.py` : prototypes Python (OpenCV + NumPy) qui ont servi à valider l'approche.
+  `unroll.py` fait la chaîne complète vidéo → étiquette à plat.
+- `docs/*.png` : résultats obtenus sur la vidéo de test.
+
+Tester l'app sur une vidéo sans caméra :
+`http://localhost:8080/?video=test.mp4&roi=0.4792,0.2778,0.0307,0.2917`
+(le ROI est en fractions de l'image et correspond à la vidéo de test de l'utilisateur). Avec une vidéo,
+l'app avance image par image par `seeked`, ce qui marche même dans un onglet masqué, mais lentement.
+
+## Algorithme (index.html)
+
+1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
+   localStorage. La hauteur de travail est plafonnée à 720 px.
+2. **Suivi du mouvement** : une estimation grossière image par image (SSD sur le gradient
+   horizontal, recherche autour du dernier mouvement), puis **un recalage absolu de l'image sur le
+   panorama déjà construit** (`registerMosaic`). C'est cette deuxième étape qui fait foi.
+   - Pourquoi : additionner des décalages image par image accumule un biais. Sur la vidéo de test,
+     la somme vaut 615 px en SSD et 709 px en corrélation de phase, contre 652 px en mesure directe
+     sur 12 images. Le recalage sur le panorama donne 699 px, sans dérive.
+3. **Panorama** : pour chaque colonne, on garde la meilleure capture, celle qui était la plus au
+   centre de la fenêtre et la plus nette. Une image dont la netteté est inférieure à 0,6 × la
+   médiane récente est ignorée : ce sont les à-coups de rotation qui abîmaient le n° de lot.
+4. **Fermeture de boucle** (tour complet) : on compare l'image en cours au panorama, loin de la
+   position actuelle (NCC sur le gradient, avec une petite recherche verticale). Le tour est validé
+   si NCC > 0,4, avec 0,08 d'écart sur le 2e meilleur candidat, et deux détections concordantes
+   (±4 px) parmi les 4 dernières.
+   - Comparer le panorama à lui-même ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
+     panorama donne 0,56.
+5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
+   Le scan se termine à 99,5 % de couverture, avec une barre de progression et un anneau.
+6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
+   sombre sur presque toute la hauteur (médiane de l'obscurité entre 5 et 95 % de la hauteur, avec un
+   contraste supérieur à 25 niveaux). L'image commence juste après et finit juste avant. La partie qui
+   dépasse le panorama est prise un tour plus tôt, après recalage vertical des deux passages.
+
+## Vidéo de test et vérité terrain
+
+La vidéo fait 4K à 60 fps, dure 5,2 s (312 images) et a été tenue à la main, donc elle vibre fortement
+(décalage vertical d'environ 60 px). Elle n'est pas dans le dépôt : elle est sur le PC de l'utilisateur
+(`D:\Videos\20261030_131153_1.mp4`).
+
+Résultats : circonférence d'environ 590 à 597 px, jonction de l'étiquette trouvée, image de sortie
+de 574 × 630 px.
+
+Étiquette de référence pour vérifier une future lecture automatique :
+BD Pharmingen™ (BD Biosciences), Alexa Fluor® 647 Rat Anti-Mouse **Siglec-F**, clone E50-2440,
+Cat **562680**, Lot **6089689** (vérifié sur l'image brute n° 145), Exp 2020-04-30,
+50 µg, 0,25 ml, 0,2 mg/ml, conservation à 4 °C. Annotation manuscrite verticale « LII3 » (incertaine).
+
+## Limites connues et suite
+
+- Quelques raccords restent visibles dans le texte (« Mo**ı**se », « Res**s**earch »). Pistes :
+  adoucir les jonctions entre captures, et mieux gérer les zones blanches sans texture.
+- La jonction n'est pas détectée si l'étiquette se chevauche elle-même (pas d'espace visible).
+- L'app n'a pas encore été testée sur un vrai téléphone ni dans le socle imprimé.
+  Prochaine vidéo attendue : une vraie capture dans le socle.
+- Ensuite : une app native iPhone pour le mode sport, puis la lecture des champs (OCR ou modèle
+  vision, contrôle de cohérence catalogue / marqueur / fluorochrome / clone, écran de confirmation).
+- Exposition sur Android : `exposureTime` est en unités de 100 µs (le « mode sport » vise 10, soit 1 ms).
+  Une exposition courte demande un éclairage LED diffus dans le socle, pas le flash du téléphone.
+
+## Travail sur plusieurs PC
+
+L'utilisateur code sur deux ordinateurs. Toujours faire `git pull` avant de commencer, puis commit
+et `git push` à la fin.
