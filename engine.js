@@ -158,19 +158,32 @@ class ScanEngine{
     if (cl.u0 < end) return;   // la recherche continuera à l'image suivante
     this.cl = null;
     const top = cl.top;
-    const second = all.reduce((m, v) => Math.abs(v.u0 - top.u0) > 10 && v.c > m ? v.c : m, -1), P = ucur - top.u0;
-    this.trace.push({ frame: this.frames, c: +top.c.toFixed(3), second: +second.toFixed(3), P });   // pour le diagnostic
+    // Pics de ressemblance (meilleur NCC par position, maxima locaux à ±10 colonnes)
+    const best = new Map(); for (const v of all) if (!(best.get(v.u0) >= v.c)) best.set(v.u0, v.c);
+    const bu = [...best].sort((p, q) => p[0] - q[0]), peaks = [];
+    for (let i = 0; i < bu.length; i++){
+      const [u0, c] = bu[i]; let ok = true;
+      for (let j = i - 1; ok && j >= 0 && u0 - bu[j][0] <= 10; j--) if (bu[j][1] > c) ok = false;
+      for (let j = i + 1; ok && j < bu.length && bu[j][0] - u0 <= 10; j++) if (bu[j][1] > c) ok = false;
+      if (ok) peaks.push({ u0, c, d: Math.abs(ucur - u0) });
+    }
+    // Les candidats proches du meilleur ne sont pas forcément des concurrents : quand le panorama couvre plus
+    // de deux tours, l'image ressemble autant à la zone vue un tour plus tôt qu'à celle vue deux tours plus tôt.
+    // Ces pics-là, espacés d'un multiple du même tour, confirment le tour au lieu de le contredire.
+    const close = peaks.filter(p => p.c > top.c - this.minGap);
+    const P = close.reduce((m, p) => p.d > 2 * W && p.d < m ? p.d : m, Infinity);
+    const periodic = p => { const k = Math.max(1, Math.round(p.d / P)); return Math.abs(p.d - k * P) <= Math.max(6, .02 * p.d); };
+    const second = peaks.filter(p => !(P < Infinity && periodic(p))).reduce((m, p) => p.c > m ? p.c : m, -1);
+    this.trace.push({ frame: this.frames, c: +top.c.toFixed(3), second: +second.toFixed(3), P: P < Infinity ? P : 0 });   // pour le diagnostic
     if (this.trace.length > 50) this.trace.shift();
-    // le vrai raccord se détache nettement du 2e candidat (écart ≥ 0,12) ; avant le tour complet, les deux restent proches
-    if (top.c < this.minC || top.c - second < this.minGap) return;
-    if (Math.abs(P) <= 2 * W) return;
+    // le vrai raccord se détache nettement de tout candidat qui n'est pas un multiple du tour (écart ≥ 0,12)
+    if (P === Infinity || top.c < this.minC || top.c - second < this.minGap) return;
     // il faut deux détections concordantes parmi les dernières pour valider le tour
     const agree = this.closures.slice(-4).filter(q => Math.abs(q - P) <= 4);
     this.closures.push(P);
-    if (agree.length) this.period = Math.abs(Math.round((agree[agree.length - 1] + P) / 2));
+    if (agree.length) this.period = Math.round((agree[agree.length - 1] + P) / 2);
   }
 
-  // part du tour vue, et plus long trou (en colonnes, sur le tour replié)
   coverage(){
     const m = this.coverageMap(this.period), P = this.period; let n = 0, gap = 0, run = 0;
     for (const v of m) n += v;

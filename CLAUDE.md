@@ -103,6 +103,12 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
      (`startClosure` fige l'image, `stepClosure` avance de `CLOSURE_OPS` opérations par image), avec une
      ligne sur quatre en hauteur. Aucune image ne dépasse ~16 ms sur PC. `engine.trace` garde les derniers
      résultats (NCC, 2e candidat, période) pour le diagnostic.
+   - **Plus de deux tours** : l'image ressemble alors autant à la zone vue un tour plus tôt qu'à celle vue
+     deux tours plus tôt, et l'ancien test d'écart échouait toujours (bloqué à 60 % avec « 0.6 / 0.6 » chez
+     l'utilisateur). On cherche donc les pics de ressemblance ; ceux espacés d'un multiple du plus petit écart
+     (> 2 largeurs de zone) confirment le tour, et seul un pic hors de ces multiples compte comme concurrent.
+     La période retenue est le plus petit écart. Testé sur une rotation simulée de 2,7 tours (texture de
+     l'étiquette réelle) : période 574 pour 573.
    - Comparer le panorama à lui-même ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
      panorama donne 0,56.
 5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
