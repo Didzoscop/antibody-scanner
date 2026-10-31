@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 const CAP = 6000, OFF = 3000, MARGIN = 6;   // colonnes du panorama, origine au centre
-const CLOSURE_OPS = 2.5e6;                  // travail de recherche du tour complet par image (quelques ms sur téléphone)
+const CLOSURE_OPS = 1.5e6;                  // travail de recherche du tour complet par image (quelques ms sur téléphone)
 const median = a => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
 
 class ScanEngine{
@@ -16,6 +16,7 @@ class ScanEngine{
     this.prevFx = null; this.pos = 0; this.ypos = 0; this.lastDx = 0;
     this.frames = 0; this.rejected = 0; this.sharpHist = []; this.umin = 1e9; this.umax = -1e9;
     this.closures = []; this.period = 0; this.cl = null; this.trace = [];
+    this.regD = 3; this.regX = 14; this.regStep = 2; this.mosStep = 2; this.mosR = 10; this.mosaicOnly = false;
     this.ops = CLOSURE_OPS; this.ystep = 4; this.minC = .3; this.minGap = .12;
   }
 
@@ -30,30 +31,33 @@ class ScanEngine{
     return { px, g, fx, sharp: sharp / (W * H2) };
   }
 
-  // Décalage (dx, dy) tel que cur[y][x] ≈ prev[y-dy][x-dx], cherché autour du dernier mouvement
+  // Décalage (dx, dy) tel que cur[y][x] ≈ prev[y-dy][x-dx], cherché autour du dernier mouvement.
+  // Recherche grossière (un dx sur deux) puis affinage autour du meilleur : deux fois moins de calcul.
   register(a, b){
-    const { W, H2 } = this, S = Math.round(W * .45), D = 3;
-    const c0 = Math.round(this.lastDx), lo = Math.max(-S, c0 - 14), hi = Math.min(S, c0 + 14), NX = hi - lo + 1;
-    const cost = new Float64Array(NX * (2 * D + 1)).fill(NaN); let bestC = Infinity, bx = 0, by = 0;
-    for (let dy = -D; dy <= D; dy++) for (let dx = lo; dx <= hi; dx++){
+    const { W, H2 } = this, S = Math.round(W * .45), D = this.regD, X = this.regX, st = this.regStep;
+    const c0 = Math.round(this.lastDx), lo = Math.max(-S, c0 - X), hi = Math.min(S, c0 + X);
+    const cost = (dx, dy) => {
       const x0 = Math.max(1, 1 + dx), x1 = Math.min(W - 1, W - 1 + dx), y0 = Math.max(0, dy), y1 = Math.min(H2, H2 + dy);
-      if (x1 - x0 < W * .45) continue;
+      if (dx < lo || dx > hi || x1 - x0 < W * .45) return NaN;
       let s = 0, n = 0;
-      for (let y = y0; y < y1; y += 2){ const ra = (y - dy) * W - dx, rb = y * W; for (let x = x0; x < x1; x++){ const d = b[rb + x] - a[ra + x]; s += d * d; } n += x1 - x0; }
-      const c = s / n; cost[(dy + D) * NX + dx - lo] = c;
-      if (c < bestC){ bestC = c; bx = dx; by = dy; }
-    }
-    const at = dx => dx < lo || dx > hi ? NaN : cost[(by + D) * NX + dx - lo], l = at(bx - 1), r = at(bx + 1);
+      for (let y = y0; y < y1; y += st){ const ra = (y - dy) * W - dx, rb = y * W; for (let x = x0; x < x1; x++){ const d = b[rb + x] - a[ra + x]; s += d * d; } n += x1 - x0; }
+      return s / n;
+    };
+    let bestC = Infinity, bx = 0, by = 0;
+    for (let dy = -D; dy <= D; dy++) for (let dx = lo; dx <= hi; dx += 2){ const c = cost(dx, dy); if (c < bestC){ bestC = c; bx = dx; by = dy; } }
+    let l = cost(bx - 1, by), r = cost(bx + 1, by);
+    if (l < bestC || r < bestC){ bx += l < r ? -1 : 1; bestC = Math.min(l, r); l = cost(bx - 1, by); r = cost(bx + 1, by); }
     let sub = 0; if (l === l && r === r){ const den = l - 2 * bestC + r; if (den > 0) sub = .5 * (l - r) / den; }
     return { dx: bx + sub, dy: 2 * by };
   }
 
-  // Position absolue de l'image dans le panorama, autour de la prédiction : l'erreur ne s'accumule pas
+  // Position absolue de l'image dans le panorama, autour de la prédiction : l'erreur ne s'accumule pas.
+  // Même principe : une position sur deux, puis affinage.
   registerMosaic(fx, pred){
-    const { W, H2, gm, filled } = this, p0 = Math.round(pred), yo2 = Math.round(this.ypos / 2), R = 4, rows = [];
-    for (let y = R + 2; y < H2 - R - 2; y += 2) rows.push(y);
-    const cost = new Float64Array(17 * 7).fill(NaN); let bestC = Infinity, bp = 0, bd = 0;
-    for (let dp = -8; dp <= 8; dp++) for (let dy = -3; dy <= 3; dy++){
+    const { W, H2, gm, filled } = this, p0 = Math.round(pred), yo2 = Math.round(this.ypos / 2), R = 4, rows = [], PR = this.mosR;
+    for (let y = R + 2; y < H2 - R - 2; y += this.mosStep) rows.push(y);
+    const cost = (dp, dy) => {
+      if (dp < -PR || dp > PR) return NaN;
       const p = p0 + dp; let s = 0, n = 0;
       for (let x = MARGIN; x < W - MARGIN; x++){
         const u = x - p + OFF; if (!filled[u - 1] || !filled[u + 1]) continue;
@@ -61,12 +65,13 @@ class ScanEngine{
         for (const y of rows){ const d = fx[y * W + x] - (gm[a + y] - gm[b + y]); s += d * d; }
         n++;
       }
-      if (n < (W - 2 * MARGIN) * .35) continue;
-      const c = s / n; cost[(dy + 3) * 17 + dp + 8] = c;
-      if (c < bestC){ bestC = c; bp = dp; bd = dy; }
-    }
+      return n < (W - 2 * MARGIN) * .35 ? NaN : s / n;
+    };
+    let bestC = Infinity, bp = 0, bd = 0;
+    for (let dp = -PR; dp <= PR; dp += 2) for (let dy = -3; dy <= 3; dy++){ const c = cost(dp, dy); if (c < bestC){ bestC = c; bp = dp; bd = dy; } }
     if (bestC === Infinity) return null;
-    const at = dp => dp < -8 || dp > 8 ? NaN : cost[(bd + 3) * 17 + dp + 8], l = at(bp - 1), r = at(bp + 1);
+    let l = cost(bp - 1, bd), r = cost(bp + 1, bd);
+    if (l < bestC || r < bestC){ bp += l < r ? -1 : 1; bestC = Math.min(l, r); l = cost(bp - 1, bd); r = cost(bp + 1, bd); }
     let sub = 0; if (l === l && r === r){ const den = l - 2 * bestC + r; if (den > 0) sub = .5 * (l - r) / den; }
     return { pos: p0 + bp + sub, ypos: 2 * (yo2 + bd) };
   }
@@ -75,8 +80,12 @@ class ScanEngine{
   push(px){
     const f = this.analyse(px); this.frames++;
     if (this.prevFx){
-      const r = this.register(this.prevFx, f.fx);                                       // estimation grossière image par image…
-      const m = this.umax > this.umin ? this.registerMosaic(f.fx, this.pos + r.dx) : null; // …affinée sur le panorama
+      let r = null, m = null;
+      if (this.mosaicOnly && this.umax > this.umin) m = this.registerMosaic(f.fx, this.pos + this.lastDx);
+      if (!m){
+        r = this.register(this.prevFx, f.fx);                                              // estimation grossière image par image…
+        m = this.umax > this.umin ? this.registerMosaic(f.fx, this.pos + r.dx) : null;     // …affinée sur le panorama
+      }
       if (m){ this.lastDx = m.pos - this.pos; this.pos = m.pos; this.ypos = m.ypos; }
       else { this.pos += r.dx; this.ypos += r.dy; this.lastDx = r.dx; }
     }
@@ -90,9 +99,11 @@ class ScanEngine{
       if (!this.cl && this.umax - this.umin > 2.5 * this.W) this.startClosure(f);
       if (this.cl) this.stepClosure();
     }
-    const coverage = this.period ? this.coverage() : 0;
+    const cov = this.period ? this.coverage() : { coverage: 0, gap: 0 };
+    // fin du scan : tout le tour a été vu, à de petits trous près (4 colonnes au plus, comblés par les voisines à la mise à plat)
+    const done = !!this.period && cov.gap <= 4;
     return { frames: this.frames, rejected: this.rejected, extent: Math.max(0, this.umax - this.umin + 1), period: this.period,
-      coverage, tooFast: Math.abs(this.lastDx) > this.W * .3, done: !!this.period && coverage >= .995 };
+      coverage: cov.coverage, tooFast: Math.abs(this.lastDx) > this.W * .3, done };
   }
 
   write(f, imgScore){
@@ -159,7 +170,13 @@ class ScanEngine{
     if (agree.length) this.period = Math.abs(Math.round((agree[agree.length - 1] + P) / 2));
   }
 
-  coverage(){ const m = this.coverageMap(this.period); let n = 0; for (const v of m) n += v; return n / this.period; }
+  // part du tour vue, et plus long trou (en colonnes, sur le tour replié)
+  coverage(){
+    const m = this.coverageMap(this.period), P = this.period; let n = 0, gap = 0, run = 0;
+    for (const v of m) n += v;
+    if (n < P) for (let i = 0; i < 2 * P; i++){ if (m[i % P]) run = 0; else if (++run > gap) gap = run; }
+    return { coverage: n / P, gap: Math.min(gap, P) };
+  }
   // couverture du tour répartie en n cases (pour la barre de progression)
   coverageMap(n){
     const out = new Uint8Array(n), P = this.period; if (!P) return out;
@@ -207,9 +224,11 @@ class ScanEngine{
     const canvas = document.createElement('canvas'); canvas.width = len; canvas.height = H;
     const img = new ImageData(len, H);
     for (let k = 0; k < len; k++){
-      const x = start + k, u = wraps && x > seam ? (filled[x - P] ? x - P : src(x)) : src(x);
+      const x = start + k;
+      let u = wraps && x > seam ? (filled[x - P] ? x - P : src(x)) : src(x);
+      for (let d = 1; u < 0 && d <= 8; d++) u = src(x - d) >= 0 ? src(x - d) : src(x + d);   // petit trou : colonne voisine
       if (u < 0) continue;
-      const dy = u < x ? shift : 0;
+      const dy = u < x - 8 ? shift : 0;   // colonne prise un tour plus tôt
       for (let y = 0; y < H; y++){
         const sy = Math.min(H - 1, Math.max(0, y + dy)), o = (sy * CAP + u) * 4, d = (y * len + k) * 4;
         img.data[d] = mos[o]; img.data[d + 1] = mos[o + 1]; img.data[d + 2] = mos[o + 2]; img.data[d + 3] = 255;
@@ -217,6 +236,18 @@ class ScanEngine{
     }
     canvas.getContext('2d').putImageData(img, 0, 0);
     return { canvas, junction };
+  }
+
+  // Panorama brut, tel qu'assemblé (scan arrêté avant la fin) : utile pour comprendre ce qui a coincé
+  panorama(){
+    const { H, mos, umin, umax } = this, w = umax - umin + 1, img = new ImageData(w, H);
+    for (let y = 0; y < H; y++) for (let k = 0; k < w; k++){
+      const o = (y * CAP + umin + k) * 4, d = (y * w + k) * 4;
+      img.data[d] = mos[o]; img.data[d + 1] = mos[o + 1]; img.data[d + 2] = mos[o + 2]; img.data[d + 3] = mos[o + 3] ? 255 : 0;
+    }
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = H;
+    canvas.getContext('2d').putImageData(img, 0, 0);
+    return canvas;
   }
 }
 window.ScanEngine = ScanEngine;

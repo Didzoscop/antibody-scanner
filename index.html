@@ -271,7 +271,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.4';
+const VERSION = 'v0.5';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -307,7 +307,8 @@ const I18N = {
     res: 'Resolution {w}×{h}', fps: ' at {f} fps', noCtl: ' This browser cannot set exposure or focus (Safari on iPhone, for example).',
     exposure: 'Exposure', iso: 'ISO', focus: 'Focus', zoom: 'Zoom', sport: 'Sport mode (1 ms)', torch: 'Torch', refused: 'Setting refused: ',
     lensFail: 'This lens could not be opened', fpsNow: '{f} frames/s processed', langTo: 'Language: English. Switch to French',
-    noTurn: ['Keep turning', 'Full turn not recognised yet. Check that the frame covers the label only.'], install: 'Install the app'
+    noTurn: ['Keep turning', 'Full turn not recognised yet. Check that the frame covers the label only.'], install: 'Install the app',
+    match: 'match', partialSaved: 'Scan stopped: the raw panorama is in the register', partial: 'incomplete'
   },
   fr: {
     tag: "Scan des étiquettes de fioles d'anticorps", start: 'Scanner', settings: 'Paramètres', register: 'Registre', close: 'Fermer',
@@ -331,7 +332,8 @@ const I18N = {
     res: 'Résolution {w}×{h}', fps: ' à {f} i/s', noCtl: " Ce navigateur ne permet pas de régler l'exposition ni la mise au point (c'est le cas de Safari sur iPhone).",
     exposure: 'Exposition', iso: 'ISO', focus: 'Mise au point', zoom: 'Zoom', sport: 'Mode sport (1 ms)', torch: 'Lampe', refused: 'Réglage refusé : ',
     lensFail: "Impossible d'ouvrir cet objectif", fpsNow: '{f} images/s traitées', langTo: 'Langue : français. Passer en anglais',
-    noTurn: ['Continuez de tourner', "Tour complet pas encore reconnu. Vérifiez que le cadre ne couvre que l'étiquette."], install: "Installer l'app"
+    noTurn: ['Continuez de tourner', "Tour complet pas encore reconnu. Vérifiez que le cadre ne couvre que l'étiquette."], install: "Installer l'app",
+    match: 'raccord', partialSaved: 'Scan arrêté : le panorama brut est dans le registre', partial: 'incomplet'
   }
 };
 const prefs = Object.assign({ sens: 25, autoNext: true, lang: 'en', lens: null }, store.get('prefs', {}));
@@ -395,7 +397,7 @@ async function renderRegister(){
   recs.reverse().forEach(r => {
     const u = URL.createObjectURL(r.blob); urls.push(u);
     const b = document.createElement('button'); b.className = 'thumb'; b.type = 'button';
-    b.innerHTML = `<img alt=""><div class="meta"></div>`; b.querySelector('img').src = u; b.querySelector('.meta').textContent = fmtDate(r.date);
+    b.innerHTML = `<img alt=""><div class="meta"></div>`; b.querySelector('img').src = u; b.querySelector('.meta').textContent = fmtDate(r.date) + (r.partial ? ' · ' + t('partial') : '');
     b.onclick = () => openScan(r, u); g.appendChild(b);
   });
 }
@@ -597,24 +599,47 @@ $('file').onchange = e => { const f = e.target.files[0]; if (!f) return; source 
 
 $('btnRun').onclick = () => {
   if (state === 'zone'){
-    store.set('roi', roi);
+    store.set('roi', roi); setupCrop();
     if (source.kind === 'file'){ startEngine(); stepFile(0); return; }   // vidéo de test : pas de détection du socle
     det.bg = null; det.bgFrames = 0; det.occ = false; det.n = 0; setState('wait');
-  } else { engine = null; setState('zone'); }
+  } else {
+    if (state === 'scan' && engine) savePartial();
+    engine = null; setState('zone');
+  }
 };
 
-// Petite image grise de la zone, pour savoir si le socle est vide ou occupé
-const dc = document.createElement('canvas'), dctx = dc.getContext('2d', { willReadFrequently: true });
-function smallGray(){
-  const vw = video.videoWidth, vh = video.videoHeight, gw = 12, gh = Math.max(12, Math.min(48, Math.round(12 * roi.h * vh / (roi.w * vw))));
-  if (dc.width !== gw || dc.height !== gh){ dc.width = gw; dc.height = gh; }
-  dctx.drawImage(video, roi.x * vw, roi.y * vh, roi.w * vw, roi.h * vh, 0, 0, gw, gh);
-  const d = dctx.getImageData(0, 0, gw, gh).data, g = new Float32Array(gw * gh);
-  for (let i = 0; i < g.length; i++) g[i] = d[i * 4] * .299 + d[i * 4 + 1] * .587 + d[i * 4 + 2] * .114;
+/* Lecture de la zone. On découpe la zone dans l'image vidéo AVANT d'en copier les pixels (createImageBitmap) :
+   copier une image 4K entière pour n'en garder qu'une bande coûte ~20 ms sur PC (bien plus sur téléphone),
+   contre ~1,5 ms pour la zone seule. Une seule lecture par image sert à la fois au scan et à la détection du socle. */
+function setupCrop(){
+  const vw = video.videoWidth, vh = video.videoHeight, rw = Math.round(roi.w * vw), rh = Math.round(roi.h * vh), k = Math.min(1, 720 / rh);
+  W = Math.max(16, Math.round(rw * k) & ~1); H = Math.max(16, Math.round(rh * k) & ~1);
+  wc = document.createElement('canvas'); wc.width = W; wc.height = H; wctx = wc.getContext('2d');
+}
+let bitmapOk = typeof createImageBitmap === 'function';
+async function grab(){
+  const vw = video.videoWidth, vh = video.videoHeight, sx = Math.round(roi.x * vw), sy = Math.round(roi.y * vh), sw = Math.round(roi.w * vw), sh = Math.round(roi.h * vh);
+  if (bitmapOk){
+    try {
+      const bmp = await createImageBitmap(video, sx, sy, sw, sh, { resizeWidth: W, resizeHeight: H, resizeQuality: 'high' });
+      wctx.drawImage(bmp, 0, 0); bmp.close();
+      return wctx.getImageData(0, 0, W, H).data;
+    } catch (e){ bitmapOk = false; }   // navigateur trop ancien : lecture classique
+  }
+  wctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
+  return wctx.getImageData(0, 0, W, H).data;
+}
+// petite image grise de la zone (12 × N), pour savoir si le socle est vide ou occupé
+function grayOf(px){
+  const gw = 12, gh = Math.max(12, Math.min(48, Math.round(12 * H / W))), g = new Float32Array(gw * gh), n = new Uint16Array(gw * gh);
+  for (let y = 0; y < H; y += 2){
+    const gy = Math.min(gh - 1, (y * gh / H) | 0);
+    for (let x = 0; x < W; x += 2){ const k = gy * gw + Math.min(gw - 1, (x * gw / W) | 0), i = (y * W + x) * 4; g[k] += px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114; n[k]++; }
+  }
+  for (let k = 0; k < g.length; k++) g[k] /= n[k] || 1;
   return g;
 }
-function detect(){ // renvoie true/false une fois l'état stable (6 images de suite)
-  const g = smallGray();
+function detect(g){ // renvoie true/false une fois l'état stable (6 images de suite)
   if (!det.bg || det.bgFrames < 3){ // fond : moyenne des premières images après « Run scan »
     if (!det.bg || det.bg.length !== g.length){ det.bg = g; det.bgFrames = 1; }
     else { for (let i = 0; i < g.length; i++) det.bg[i] = (det.bg[i] * det.bgFrames + g[i]) / (det.bgFrames + 1); det.bgFrames++; }
@@ -628,16 +653,10 @@ function detect(){ // renvoie true/false une fois l'état stable (6 images de su
   return det.occ;
 }
 
-function startEngine(){
-  const vw = video.videoWidth, vh = video.videoHeight, rw = Math.round(roi.w * vw), rh = Math.round(roi.h * vh), k = Math.min(1, 720 / rh);
-  W = Math.max(16, Math.round(rw * k) & ~1); H = Math.max(16, Math.round(rh * k) & ~1);
-  wc = document.createElement('canvas'); wc.width = W; wc.height = H; wctx = wc.getContext('2d', { willReadFrequently: true });
-  engine = new ScanEngine(W, H); setState('scan'); drawProgress(null);
-}
-function scanFrame(){
-  const vw = video.videoWidth, vh = video.videoHeight;
-  wctx.drawImage(video, roi.x * vw, roi.y * vh, roi.w * vw, roi.h * vh, 0, 0, W, H);
-  const r = engine.push(wctx.getImageData(0, 0, W, H).data);
+function startEngine(){ engine = new ScanEngine(W, H); setState('scan'); drawProgress(null); }
+function scanFrame(px){
+  if (!engine) return;
+  const r = engine.push(px);
   drawProgress(r);
   if (r.tooFast) setStatus(...t('tooFast'));
   else if (r.frames % 10 === 0) setStatus(...t(!r.period && r.extent > 12 * W ? 'noTurn' : 'scan'));
@@ -647,9 +666,13 @@ function scanFrame(){
 function drawProgress(r){
   const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(Math.min(.6, r.extent / (8 * W) * .6) * 100) : 0;
   setGauge(pct);
-  if (r){ // cadence de traitement, utile pour diagnostiquer un téléphone lent
+  if (r){ // diagnostic : cadence de traitement et meilleur raccord trouvé (NCC / 2e candidat)
     const now = performance.now(); fpsHist.push(now); while (fpsHist.length > 30) fpsHist.shift();
-    if (fpsHist.length > 5 && r.frames % 10 === 0) $('fps').textContent = t('fpsNow', { f: Math.round((fpsHist.length - 1) * 1000 / (now - fpsHist[0])) });
+    if (fpsHist.length > 5 && r.frames % 10 === 0){
+      const tr = engine.trace[engine.trace.length - 1];
+      $('fps').textContent = t('fpsNow', { f: Math.round((fpsHist.length - 1) * 1000 / (now - fpsHist[0])) })
+        + (tr && tr.c > -1 ? ` · ${t('match')} ${tr.c.toFixed(2)} / ${tr.second.toFixed(2)}` : '');
+    }
   } else { fpsHist.length = 0; $('fps').textContent = ''; }
 }
 const fpsHist = [];
@@ -665,22 +688,32 @@ async function finish(){
   if (source.kind === 'file' || !prefs.autoNext){ setState('zone', t('again')); return; }
   setState('done');
 }
+// scan arrêté avant la fin : on garde le panorama brut dans le registre, pour voir ce qui a coincé
+async function savePartial(){
+  if (engine.umax - engine.umin < 2 * W) return;
+  const canvas = engine.panorama();
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+  try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, partial: true }); renderRegister(); toast(t('partialSaved')); }
+  catch (e){ toast(t('saveFail') + e.message); }
+}
 
-// boucle image par image : détection du socle et scan
-let loopId = null;
-function tick(){
-  if (state === 'idle' || source.kind === 'file' || video.readyState < 2) return;
-  if (state === 'wait'){ if (detect()) startEngine(); }
+// boucle image par image : détection du socle et scan (une image à la fois, les suivantes attendent)
+let loopId = null, busy = false;
+async function tick(){
+  if (state === 'idle' || state === 'zone' || source.kind === 'file' || video.readyState < 2) return;
+  const px = await grab();
+  if (state === 'idle' || state === 'zone') return;
+  const occ = detect(grayOf(px));
+  if (state === 'wait' || state === 'next'){ if (occ) startEngine(); }
   else if (state === 'scan'){
-    if (!detect()){ engine = null; setState('wait', t('removed')); return; }
-    scanFrame();
+    if (!occ){ engine = null; setState('wait', t('removed')); return; }
+    scanFrame(px);
   }
-  else if (state === 'done'){ if (!detect()) setState('next'); }
-  else if (state === 'next'){ if (detect()) startEngine(); }
+  else if (state === 'done'){ if (!occ) setState('next'); }
 }
 function loop(){
   if (state === 'idle') return;
-  tick();
+  if (!busy){ busy = true; tick().catch(() => {}).finally(() => { busy = false; }); }
   loopId = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(loop) : requestAnimationFrame(loop);
 }
 function stopLoop(){
@@ -693,7 +726,11 @@ function stepFile(ts){
   const fps = +(params.get('fps') || 60);
   if (state !== 'scan' || !engine) return;
   if (ts > video.duration){ if (engine.period) finish(); else { engine = null; setState('zone', t('videoEnd')); } return; }
-  video.addEventListener('seeked', () => { if (state !== 'scan' || !engine) return; scanFrame(); if (state === 'scan' && engine) stepFile(ts + 1 / fps); }, { once: true });
+  video.addEventListener('seeked', async () => {
+    if (state !== 'scan' || !engine) return;
+    const px = await grab(); if (state !== 'scan' || !engine) return;
+    scanFrame(px); if (state === 'scan' && engine) stepFile(ts + 1 / fps);
+  }, { once: true });
   video.currentTime = ts;
 }
 </script>

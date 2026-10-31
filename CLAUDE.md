@@ -72,6 +72,16 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
 
 1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
    localStorage. La hauteur de travail est plafonnée à 720 px.
+   - **Lecture des pixels** (index.html, `grab`) : `createImageBitmap(video, zone…)` découpe la zone avant
+     la copie. `drawImage(video) + getImageData` copiait toute l'image 4K : ~20 ms sur PC, et c'était fait
+     deux fois par image (scan + détection du socle). Avec le découpage : ~1,5 ms, une seule lecture par
+     image, dont on tire aussi la petite image grise du socle (`grayOf`). Ne pas revenir en arrière.
+   - Mesures sur PC (vidéo de test) : moteur ~12,7 ms par image (`register` et `registerMosaic` en
+     recherche grossière puis affinage). Sur cette vidéo très tremblée, en dessous de ~30 images/s traitées,
+     le suivi décroche et le tour n'est plus reconnu : la cadence est donc le point critique sur téléphone.
+   - Quand on arrête un scan avant la fin, le panorama brut (`engine.panorama()`) est gardé dans le registre,
+     marqué « incomplet », pour voir si le suivi a décroché. Le panneau affiche la cadence et le meilleur
+     raccord trouvé (NCC / 2e candidat).
 2. **Suivi du mouvement** : une estimation grossière image par image (SSD sur le gradient
    horizontal, recherche autour du dernier mouvement), puis **un recalage absolu de l'image sur le
    panorama déjà construit** (`registerMosaic`). C'est cette deuxième étape qui fait foi.
@@ -96,7 +106,8 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    - Comparer le panorama à lui-même ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
      panorama donne 0,56.
 5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
-   Le scan se termine à 99,5 % de couverture. La jauge en bas de l'écran (rouge → orange → vert) monte
+   Le scan se termine dès qu'il ne reste que des trous de 4 colonnes au plus sur le tour (en pratique,
+   dès que le tour est reconnu) ; la mise à plat comble ces trous avec les colonnes voisines. La jauge en bas de l'écran (rouge → orange → vert) monte
    jusqu'à 60 % d'après la longueur du panorama, puis affiche la couverture réelle. Le panneau affiche
    aussi la cadence de traitement (images/s), utile pour diagnostiquer un téléphone lent.
 6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
