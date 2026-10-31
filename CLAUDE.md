@@ -35,7 +35,8 @@ Cette étape n'est pas commencée : la v1 s'arrête à l'image à plat, par choi
 - `docs/*.png` : résultats obtenus sur la vidéo de test.
 
 Tester l'app sur une vidéo sans caméra :
-`http://localhost:8080/?video=test.mp4&roi=0.4792,0.2778,0.0307,0.2917`
+`http://localhost:8080/?video=test/fiole_siglec-f.mp4&roi=0.4792,0.2778,0.0307,0.2917`
+(marche aussi en ligne : `https://didzoscop.github.io/antibody-scanner/?video=test/fiole_siglec-f.mp4&roi=…`)
 (le ROI est en fractions de l'image et correspond à la vidéo de test de l'utilisateur). Avec une vidéo,
 l'app avance image par image par `seeked`, ce qui marche même dans un onglet masqué, mais lentement.
 
@@ -68,8 +69,9 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
 ## Vidéo de test et vérité terrain
 
 La vidéo fait 4K à 60 fps, dure 5,2 s (312 images) et a été tenue à la main, donc elle vibre fortement
-(décalage vertical d'environ 60 px). Elle n'est pas dans le dépôt : elle est sur le PC de l'utilisateur
-(`D:\Videos\20261030_131153_1.mp4`).
+(décalage vertical d'environ 60 px). Elle est dans le dépôt : `test/fiole_siglec-f.mp4`.
+Les vidéos ne sont versionnées que dans `test/` (voir `.gitignore`). GitHub refuse les fichiers de plus
+de 100 Mo : au-delà, réduire la vidéo ou utiliser Git LFS.
 
 Résultats : circonférence d'environ 590 à 597 px, jonction de l'étiquette trouvée, image de sortie
 de 574 × 630 px.

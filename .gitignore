@@ -1,3 +1,4 @@
 cert/
 *.pem
 *.mp4
+!test/*.mp4
