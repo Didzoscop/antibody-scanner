@@ -8,6 +8,8 @@
 const CAP = 12000, OFF = 6000, MARGIN = 6;
 const MINP = 3;                             // circonférence minimale, en largeurs de bande (π ≈ 3,14 : la bande est posée sur la fiole)
 const CLOSURE_OPS = 1.5e6;                  // travail de recherche du tour complet par image (quelques ms sur téléphone)
+const REFQ_MIN = 1.5, NET = .45;            // une colonne est nette si Q ≥ NET × la netteté de référence (voir analyse)
+const SETTLE = 3;                           // images de suite sans mouvement vertical avant de commencer le panorama
 const median = a => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
 
 class ScanEngine{
@@ -16,6 +18,8 @@ class ScanEngine{
     this.mos = new Uint8ClampedArray(CAP * H * 4);      // panorama RGBA, rangée par rangée
     this.gm = new Float32Array(CAP * this.H2);           // panorama en gris (une ligne sur deux), colonne par colonne
     this.best = new Float32Array(CAP).fill(-1e9); this.filled = new Uint8Array(CAP);
+    this.qcol = new Float32Array(CAP); this.steady = new Uint8Array(CAP);   // netteté (Q) et stabilité verticale de la capture gardée
+    this.qHist = []; this.refQ = REFQ_MIN; this.settled = 0; this.started = false;
     this.prevFx = null; this.pos = 0; this.ypos = 0; this.lastDx = 0;
     this.frames = 0; this.rejected = 0; this.sharpHist = []; this.umin = 1e9; this.umax = -1e9;
     this.closures = []; this.period = 0; this.cl = null; this.trace = []; this.hintP = 0; this.hintTries = 0;
@@ -34,7 +38,26 @@ class ScanEngine{
     // gradient à demi-largeur (somme de deux colonnes), pour la recherche grossière du mouvement
     const Wh = W >> 1, fxh = new Float32Array(Wh * H2);
     for (let y = 0; y < H2; y++) for (let i = 0; i < Wh; i++) fxh[y * Wh + i] = fx[y * W + 2 * i] + fx[y * W + 2 * i + 1];
-    return { px, g, fx, fxh, sharp: sharp / (W * H2) };
+    // Flou de bougé : rapport entre l'énergie du gradient fin (pas de 2 px) et celle du gradient large (8 px), en
+    // horizontal (Rx) et en vertical (Ry). Une rotation floute seulement en horizontal : Q = Rx / Ry chute (vidéo de
+    // test, fenêtres de 13 colonnes : nette 0,97 à 2,35 ; floutée de 5 px 0,40 à 0,97). Le rapport ne dépend presque
+    // pas du contraste ni de la mise au point, contrairement à la somme des gradients qui variait du simple au
+    // quadruple selon le texte vu (zones blanches, gros chiffres).
+    const a2 = new Float32Array(W), a8 = new Float32Array(W), b2 = new Float32Array(W), b8 = new Float32Array(W);
+    for (let y = 2; y < H2 - 2; y++) for (let x = 4; x < W - 4; x++){
+      const i = y * W + x; let v = g[i + 1] - g[i - 1]; a2[x] += v * v; v = g[i + 4] - g[i - 4]; a8[x] += v * v;
+      v = g[i + W] - g[i]; b2[x] += v * v; v = g[i + 2 * W] - g[i - 2 * W]; b8[x] += v * v;
+    }
+    const q = new Float32Array(W), Rw = 6, tex = 50 * (H2 - 4) * (2 * Rw + 1); let A2 = 0, A8 = 0, B2 = 0, B8 = 0;
+    for (let x = 4; x < W - 4; x++){ A2 += a2[x]; A8 += a8[x]; B2 += b2[x]; B8 += b8[x]; }
+    for (let x = 0; x < W; x++){
+      let p = 0, r8 = 0, r2 = 0, t = 0;
+      for (let k = Math.max(4, x - Rw); k <= Math.min(W - 5, x + Rw); k++){ p += a2[k]; r8 += a8[k]; r2 += b2[k]; t += b8[k]; }
+      // fenêtre sans texture (zone blanche) : rien à lire, donc rien de flou
+      q[x] = r8 + t < tex ? 9 : (p / (r8 + 1e-6)) / ((r2 + 1e-6) / (t + 1e-6));
+    }
+    const qf = A8 + B8 < tex * W / (2 * Rw + 1) ? 0 : (A2 / A8) / (B2 / B8);
+    return { px, g, fx, fxh, sharp: sharp / (W * H2), q, qf };
   }
 
   // Recherche grossière du mouvement sur TOUTE la plage possible (±0,45 largeur), à demi-résolution.
@@ -105,9 +128,18 @@ class ScanEngine{
   // Une image de plus. Renvoie l'état pour l'interface.
   push(px){
     const f = this.analyse(px); this.frames++;
-    if (this.prevFx){
+    // On attend que la fiole soit posée : tant qu'elle bouge verticalement (on l'enfonce dans le socle), ses images
+    // ne vont pas dans le panorama. Chez l'utilisateur, les deux bords abîmés de l'étiquette venaient de ce moment-là.
+    if (!this.started){
+      if (this.prevFx) this.settled = Math.abs(this.register(this.prevFx, f.fx, 0, Math.round(this.W * .45)).dy) <= 2 ? this.settled + 1 : 0;
+      this.prevFx = f.fx; this.prevFxh = f.fxh;
+      if (this.settled < SETTLE) return { frames: this.frames, rejected: 0, extent: 0, period: 0, coverage: 0, blurry: 0, tooFast: false, done: false, settling: true };
+      this.started = true;
+    }
+    const y0 = this.ypos;
+    if (this.prevFx && this.umax > this.umin){
       let r = null, m = null;
-      if (this.mosaicOnly && this.umax > this.umin) m = this.registerMosaic(f.fx, this.pos + this.lastDx);
+      if (this.mosaicOnly) m = this.registerMosaic(f.fx, this.pos + this.lastDx);
       if (!m){
         // estimation image par image : autour de la vitesse précédente (précis), et autour du résultat d'une
         // recherche grossière sur toute la plage (rattrape un emballement) ; on garde la meilleure correspondance
@@ -116,37 +148,50 @@ class ScanEngine{
         // Pas systématiquement : sur une étiquette aux motifs répétés, la recherche large se trompe parfois
         // (vidéo de test : circonférence 7 % trop courte si on la prend à chaque image).
         if (this.coarseAlways || r.edge) r = this.register(this.prevFx, f.fx, this.coarseShift(this.prevFxh, f.fxh), 4);
-        m = this.umax > this.umin ? this.registerMosaic(f.fx, this.pos + r.dx) : null;     // …affinée sur le panorama
+        // …affinée sur le panorama, sauf pour une image floue : son gradient, écrasé, se recale mal sur un panorama
+        // net (simulation : circonférence fausse de 25 %) ; la comparer à l'image d'avant, floue aussi, est plus sûr
+        if (!(f.qf > 0 && f.qf < .5 * this.refQ)) m = this.registerMosaic(f.fx, this.pos + r.dx);
       }
       if (m){ this.lastDx = m.pos - this.pos; this.pos = m.pos; this.ypos = m.ypos; }
       else { this.pos += r.dx; this.ypos += r.dy; this.lastDx = r.dx; }
     }
     this.prevFx = f.fx; this.prevFxh = f.fxh;
-    this.sharpHist.push(f.sharp); if (this.sharpHist.length > 45) this.sharpHist.shift();
-    const med = median(this.sharpHist);
-    // Les images floues (à-coups de rotation) ne remplissent que les colonnes encore vides, avec la plus basse
-    // priorité : la moindre image nette les remplace. Sans ça, une zone vue seulement pendant un à-coup restait
-    // un trou et le scan ne se terminait jamais (vidéo de l'utilisateur : trou de 60 colonnes sur le tour).
-    if (this.frames > 3 && f.sharp < .6 * med){ this.rejected++; this.write(f, -10); }
-    else this.write(f, Math.log(f.sharp / med));
+    // netteté de référence : les images les plus nettes de ce scan (3e quartile), au moins REFQ_MIN pour qu'un scan
+    // entièrement flou ne se juge pas net
+    if (f.qf > 0){ this.qHist.push(f.qf); if (this.qHist.length > 900) this.qHist.shift(); }
+    if (this.frames % 5 === 0 && this.qHist.length >= 8){ const s = [...this.qHist].sort((p, q) => p - q); this.refQ = Math.max(REFQ_MIN, s[Math.floor(s.length * .75)]); }
+    const steady = Math.abs(this.ypos - y0) <= 3;
+    if (f.qf > 0 && f.qf < NET * this.refQ) this.rejected++;
+    this.write(f, steady);
     if (!this.period){
       if (!this.cl && this.umax - this.umin > 3.5 * this.W) this.startClosure(f);
       if (this.cl) this.stepClosure();
     }
-    const cov = this.period ? this.coverage() : { coverage: 0, gap: 0 };
-    // fin du scan : tout le tour a été vu, à de petits trous près (4 colonnes au plus, comblés par les voisines à la mise à plat)
+    const cov = this.period ? this.coverage() : { coverage: 0, gap: 0, blurry: 0 };
+    // fin du scan : tout le tour a été vu NET, à de petits trous près (4 colonnes au plus, comblés par les voisines à
+    // la mise à plat). Reconnaître le tour ne suffit plus : une zone vue seulement floue fait continuer le scan.
     const done = !!this.period && cov.gap <= 4;
     return { frames: this.frames, rejected: this.rejected, extent: Math.max(0, this.umax - this.umin + 1), period: this.period,
-      coverage: cov.coverage, tooFast: Math.abs(this.lastDx) > this.W * .2, done };
+      coverage: cov.coverage, blurry: cov.blurry, tooFast: Math.abs(this.lastDx) > this.W * .2, done };
   }
 
-  write(f, imgScore){
+  // Chaque colonne du panorama garde sa meilleure capture : la plus nette, prise au centre de la fenêtre et sans
+  // mouvement vertical. La netteté locale (q) de la capture gardée est notée, pour savoir s'il reste des zones floues.
+  // Une capture floue n'occupe une colonne que tant qu'aucune meilleure n'est passée.
+  write(f, steady){
     const { W, H, H2, mos, gm, best, filled } = this, yo = Math.round(this.ypos), yo2 = Math.round(this.ypos / 2);
+    // Pénalité pour l'image entière, pas pour chaque colonne : avec une note par colonne, deux colonnes voisines
+    // venaient souvent d'images différentes et le texte se hachait (petites erreurs de recalage à chaque raccord).
+    // Seulement une pénalité, pas de bonus : un bonus de netteté faisait préférer des colonnes vues au bord de la
+    // fenêtre, déformées par le cylindre, et créait des sauts verticaux. Q varie avec le texte vu, donc on ne
+    // pénalise que nettement en dessous de la référence.
+    const frameScore = -(f.qf > 0 ? 4 * Math.max(0, Math.log(.8 * this.refQ / f.qf)) : 0) - (steady ? 0 : 2);
     for (let x = MARGIN; x < W - MARGIN; x++){
       const u = Math.round(x - this.pos) + OFF; if (u < 1 || u >= CAP - 1) continue;
-      const s = -Math.abs(x - W / 2) / (W / 2) + imgScore;  // préférence pour le centre de la fenêtre et les images nettes
+      const s = -Math.abs(x - W / 2) / (W / 2) + frameScore;
       if (s <= best[u]) continue;
-      best[u] = s; filled[u] = 1; if (u < this.umin) this.umin = u; if (u > this.umax) this.umax = u;
+      best[u] = s; filled[u] = 1; this.qcol[u] = f.q[x]; this.steady[u] = steady ? 1 : 0;
+      if (u < this.umin) this.umin = u; if (u > this.umax) this.umax = u;
       for (let y = 0; y < H; y++){        // ligne du panorama = ligne de l'image - ypos
         const fy = y + yo, o = (y * CAP + u) * 4;
         if (fy < 0 || fy >= H){ mos[o + 3] = 0; continue; }
@@ -155,6 +200,7 @@ class ScanEngine{
       for (let y = 0; y < H2; y++){ const fy = Math.min(H2 - 1, Math.max(0, y + yo2)); gm[u * H2 + y] = f.g[fy * W + x]; }
     }
   }
+  good(u){ return this.filled[u] && this.steady[u] && this.qcol[u] >= NET * this.refQ; }
 
   // Fermeture de boucle : l'image en cours ressemble-t-elle à une zone du panorama vue loin d'ici ?
   // La recherche parcourt tout le panorama, ce qui coûte de plus en plus cher : on fige l'image au départ,
@@ -227,17 +273,15 @@ class ScanEngine{
     if (agree.length) this.period = Math.round((agree[agree.length - 1] + P) / 2);
   }
 
+  // Couverture du tour par des captures nettes : chaque colonne est repliée modulo la circonférence.
+  // blurry : part du tour vue, mais seulement floue (pour dire à l'utilisateur de tourner plus lentement)
   coverage(){
-    const m = this.coverageMap(this.period), P = this.period; let n = 0, gap = 0, run = 0;
-    for (const v of m) n += v;
-    if (n < P) for (let i = 0; i < 2 * P; i++){ if (m[i % P]) run = 0; else if (++run > gap) gap = run; }
-    return { coverage: n / P, gap: Math.min(gap, P) };
-  }
-  // couverture du tour répartie en n cases (pour la barre de progression)
-  coverageMap(n){
-    const out = new Uint8Array(n), P = this.period; if (!P) return out;
-    for (let u = this.umin; u <= this.umax; u++) if (this.filled[u]) out[Math.floor(((u - OFF) % P + P) % P / P * n)] = 1;
-    return out;
+    const P = this.period, ok = new Uint8Array(P), seen = new Uint8Array(P);
+    for (let u = this.umin; u <= this.umax; u++){ if (!this.filled[u]) continue; const k = ((u - OFF) % P + P) % P; seen[k] = 1; if (this.good(u)) ok[k] = 1; }
+    let n = 0, ns = 0, gap = 0, run = 0;
+    for (let k = 0; k < P; k++){ n += ok[k]; ns += seen[k]; }
+    if (n < P) for (let i = 0; i < 2 * P; i++){ if (ok[i % P]) run = 0; else if (++run > gap) gap = run; }
+    return { coverage: n / P, gap: Math.min(gap, P), blurry: (ns - n) / P };
   }
 
   // Mise à plat finale, de bord à bord. Renvoie { canvas, junction }.
@@ -261,32 +305,58 @@ class ScanEngine{
       junction = true; start = r + 1; len = P - (r - l + 1);
       while (start - P >= umin) start -= P;            // occurrence la plus à gauche
     }
-    // une colonne x vient de x, ou de x - P (même endroit, un tour plus tôt) si x dépasse le panorama
-    const src = x => { if (x <= umax && filled[x]) return x; if (filled[x - P]) return x - P; if (filled[x + P]) return x + P; return -1; };
-    // décalage vertical entre les deux passages, mesuré sur la zone vue deux fois
-    let shift = 0;
-    const seam = Math.min(umax, start + len - 1) - 20, wraps = start + len - 1 > umax;
-    if (wraps){
-      let bestC = -2;
-      for (let dy = -12; dy <= 12; dy++){
-        let s = 0, na = 0, nb = 0;
-        for (let u = seam - 40; u < seam; u++){
-          if (!filled[u] || !filled[u - P]) continue;
-          for (let y = 14; y < H2 - 14; y++){ const a = gm[u * H2 + y], b = gm[(u - P) * H2 + y + dy]; s += a * b; na += a * a; nb += b * b; }
+    // On suit le panorama tel qu'il a été assemblé, de la jonction jusqu'à un tour plus loin. Mais chaque morceau de
+    // l'étiquette a été vu une fois par tour : un bloc de BL colonnes flou ou manquant est pris dans un autre tour,
+    // là où il est net. Les tours ne se superposent pas exactement (le suivi recale chaque image sur les colonnes vues
+    // juste avant, pas sur le tour précédent : quelques pixels en largeur, 20 à 50 px en hauteur à la main), donc la
+    // copie est recalée sur le bloc qu'elle remplace. Choisir colonne par colonne, sans recalage, hachait le texte ;
+    // changer de tour sans nécessité ajoutait des raccords.
+    const BL = 32, RX = 10, RY = 16, ys = [], has = u => u >= umin && u <= umax && filled[u];
+    for (let y = RY + 2; y < H2 - RY - 2; y += 2) ys.push(y);
+    const match = (ua, ub) => {   // (dx, dy) tel que la colonne ub + k + dx, ligne y + dy ≈ la colonne ua + k, ligne y
+      let bestC = -2, bx = 0, by = 0;
+      for (let dx = -RX; dx <= RX; dx++) for (let dy = -RY; dy <= RY; dy += 2){
+        let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, m = 0;
+        for (let k = 0; k < BL; k += 2){
+          const a = ua + k, b = ub + k + dx; if (!has(a) || !has(b)) continue;
+          for (const y of ys){ const va = gm[a * H2 + y], vb = gm[b * H2 + y + dy]; sa += va; sb += vb; saa += va * va; sbb += vb * vb; sab += va * vb; m++; }
         }
-        const c = s / Math.sqrt(na * nb + 1e-9); if (c > bestC){ bestC = c; shift = 2 * dy; }
+        if (m < ys.length * 10) continue;
+        const c = (sab - sa * sb / m) / Math.sqrt((saa - sa * sa / m) * (sbb - sb * sb / m) + 1e-9);
+        if (c > bestC){ bestC = c; bx = dx; by = dy; }
       }
+      return bestC > .3 ? { dx: bx, dy: 2 * by } : null;
+    };
+    const stat = u0 => { let g = 0, f = 0; for (let k = 0; k < BL; k++){ const u = u0 + k; if (!has(u)) continue; f++; if (this.good(u)) g++; } return { g, f }; };
+    const blocks = [], carry = {};   // carry[j] : dernier recalage connu du tour j par rapport au panorama suivi
+    for (let x0 = start; x0 < start + len; x0 += BL){
+      const w = Math.min(BL, start + len - x0), cand = [];
+      for (let j = -3; j <= 3; j++){
+        const u = x0 + j * P; if (!has(u) && !has(u + w - 1)) continue;
+        let off = j === 0 ? { dx: 0, dy: 0 } : null;
+        // recalage mesuré seulement sur un bloc vu en entier des deux côtés : sur quelques colonnes, il se trompait
+        if (j && has(x0) && has(x0 + w - 1) && has(u) && has(u + w - 1)){ const m = match(x0, u); if (m){ off = m; carry[j] = m; } }
+        if (!off && carry[j]) off = carry[j];
+        // pas de recalage possible : seulement en dernier recours
+        cand.push({ j, u, off: off || { dx: 0, dy: 0 }, rough: !off, ...stat(u + (off ? off.dx : 0)) });
+      }
+      // le panorama suivi s'il est net, sinon la copie la plus nette (à égalité, la plus proche)
+      let pick = cand.find(c => c.j === 0);
+      if (!pick || pick.g < w - 2 || pick.f < w - 2){
+        let bs = -Infinity;
+        for (const c of cand){ const v = (c.rough ? -1e6 : 0) + c.g * 1000 + c.f * 10 - Math.abs(c.j); if (v > bs){ bs = v; pick = c; } }
+      }
+      blocks.push(pick);
     }
     const canvas = document.createElement('canvas'); canvas.width = len; canvas.height = H;
     const img = new ImageData(len, H);
     for (let k = 0; k < len; k++){
-      const x = start + k;
-      let u = wraps && x > seam ? (filled[x - P] ? x - P : src(x)) : src(x);
-      for (let d = 1; u < 0 && d <= 8; d++) u = src(x - d) >= 0 ? src(x - d) : src(x + d);   // petit trou : colonne voisine
-      if (u < 0) continue;
-      const dy = u < x - 8 ? shift : 0;   // colonne prise un tour plus tôt
+      const bk = blocks[Math.floor(k / BL)]; if (!bk) continue;
+      const u0 = bk.u + bk.off.dx + k % BL; let u = u0;
+      for (let d = 1; !has(u) && d <= 8; d++) u = has(u0 - d) ? u0 - d : u0 + d;   // petit trou : colonne voisine
+      if (!has(u)) continue;
       for (let y = 0; y < H; y++){
-        const sy = Math.min(H - 1, Math.max(0, y + dy)), o = (sy * CAP + u) * 4, d = (y * len + k) * 4;
+        const sy = Math.min(H - 1, Math.max(0, y + bk.off.dy)), o = (sy * CAP + u) * 4, d = (y * len + k) * 4;
         img.data[d] = mos[o]; img.data[d + 1] = mos[o + 1]; img.data[d + 2] = mos[o + 2]; img.data[d + 3] = 255;
       }
     }

@@ -274,7 +274,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.10';
+const VERSION = 'v0.11';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -304,6 +304,8 @@ const I18N = {
     done: ['Scan complete', 'Saved to the register. Remove the vial and insert the next one.'],
     next: ['Next vial', 'Insert the next vial in the holder.'],
     tooFast: ['Too fast!', 'Slow down until the frame stops blinking red: steady and slow is what works.'],
+    settle: ['Vial detected', 'Let go of the vial for a moment: the scan starts once it is still.'],
+    blurry: ['Keep turning, more slowly', 'Some parts of the label were only seen blurred. The bar fills up as they are seen sharp.'],
     removed: 'Vial removed before the scan finished. Put it back to start again.',
     saved: 'Scan saved to the register', savedNoJ: 'Scan saved (label start not found)', saveFail: 'Could not save the scan: ',
     again: 'Scan saved. Run again whenever you like.', videoEnd: 'End of video: full turn not detected.',
@@ -329,6 +331,8 @@ const I18N = {
     done: ['Scan terminé', 'Enregistré dans le registre. Retirez la fiole et posez la suivante.'],
     next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.'],
     tooFast: ['Trop vite !', "Ralentissez jusqu'à ce que le cadre ne clignote plus en rouge : régulier et lent, c'est ce qui marche."],
+    settle: ['Fiole détectée', "Lâchez la fiole un instant : le scan démarre dès qu'elle ne bouge plus."],
+    blurry: ['Continuez, plus lentement', "Certaines zones de l'étiquette n'ont été vues que floues. La barre se remplit à mesure qu'elles sont vues nettes."],
     removed: 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.',
     saved: 'Scan enregistré dans le registre', savedNoJ: "Scan enregistré (début de l'étiquette non trouvé)", saveFail: "Impossible d'enregistrer le scan : ",
     again: 'Scan enregistré. Relancez quand vous voulez.', videoEnd: 'Fin de la vidéo : tour complet non détecté.',
@@ -674,12 +678,17 @@ function scanFrame(px){
   // de la bande par image, le panorama se brouille et la circonférence devient fausse ou introuvable)
   roiEl.dataset.tone = r.tooFast ? 'fast' : 'busy';
   if (r.tooFast) setStatus(...t('tooFast'), 'err');
-  else if (r.frames % 10 === 0) setStatus(...t(!r.period && r.extent > 8 * W ? 'noTurn' : 'scan'));
+  else if (r.settling) setStatus(...t('settle'));
+  // le moteur ne suppose aucun diamètre : « tour pas reconnu » seulement après un long panorama (16 largeurs de
+  // cadre, soit trois tours d'une fiole ordinaire), pour ne pas presser à tort sur une fiole plus grosse
+  else if (r.frames % 10 === 0) setStatus(...t(r.period ? (r.blurry > .02 ? 'blurry' : 'scan') : r.extent > 16 * W ? 'noTurn' : 'scan'));
   if (r.done) finish();
 }
-// avant le tour complet, on estime l'avancée d'après la longueur du panorama (au plus 60 %) ; ensuite, couverture réelle du tour
+// Avant le tour complet, la circonférence est inconnue (le moteur ne suppose aucun diamètre) : la jauge avance d'après
+// la longueur du panorama en s'approchant de 60 % sans jamais s'y bloquer. Elle plafonnait à 60 % dès 8 largeurs de cadre,
+// ce qui faisait croire à un blocage sur un objet plus gros qu'une fiole. Ensuite : part du tour vue NETTE.
 function drawProgress(r){
-  const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(Math.min(.6, r.extent / (8 * W) * .6) * 100) : 0;
+  const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(60 * (1 - Math.exp(-r.extent / (5 * W)))) : 0;
   setGauge(pct);
   if (r){ // diagnostic : cadence de traitement et meilleur raccord trouvé (NCC / 2e candidat)
     const now = performance.now(); fpsHist.push(now); while (fpsHist.length > 30) fpsHist.shift();

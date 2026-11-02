@@ -126,8 +126,27 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
      la somme vaut 615 px en SSD et 709 px en corrélation de phase, contre 652 px en mesure directe
      sur 12 images. Le recalage sur le panorama donne 699 px, sans dérive.
 3. **Panorama** : pour chaque colonne, on garde la meilleure capture, celle qui était la plus au
-   centre de la fenêtre et la plus nette. Une image dont la netteté est inférieure à 0,6 × la
-   médiane récente est ignorée : ce sont les à-coups de rotation qui abîmaient le n° de lot.
+   centre de la fenêtre, sans flou de bougé et sans mouvement vertical.
+   - **Démarrage (v0.11)** : le panorama ne commence qu'après 3 images sans mouvement vertical (`SETTLE`).
+     Capture de l'utilisateur (fiole BD Horizon BUV395) : les deux bords abîmés de l'étiquette (flous, décalés
+     de ~100 px en hauteur, rayés) venaient tous les deux du début du scan, quand la fiole était encore en
+     train d'être posée (le bord droit est le même endroit, pris un tour plus tôt).
+   - **Mesure du flou (v0.11)** : `analyse` calcule, par colonne (fenêtre de 13), Rx = énergie du gradient fin
+     (pas de 2 px) / énergie du gradient large (8 px) en horizontal, Ry pareil en vertical, et Q = Rx / Ry.
+     Une rotation ne floute qu'en horizontal, donc Q chute ; le rapport ne dépend presque pas du contraste ni
+     du texte (l'ancienne netteté, somme des |gradients|, variait du simple au quadruple selon le texte vu, et
+     une somme L1 ne baisse presque pas avec le flou). Vidéo de test, fenêtres locales : nette 0,97 à 2,35
+     (5 %–95 %), floutée de 3 px 0,62–1,65, de 5 px 0,40–0,97, de 7 px 0,29–0,73. Fenêtre sans texture : Q = 9.
+     Référence `refQ` = 3e quartile du Q des images du scan (au moins 1,5) ; une colonne est **nette** si
+     Q ≥ 0,45 × refQ et si l'image n'a pas bougé verticalement de plus de 3 px (`good(u)`).
+     Ne pas mesurer Q sur une étiquette déjà assemblée : les raccords entre colonnes font du gradient fin.
+   - **Choix de la capture** : centre de la fenêtre + pénalité de flou pour l'image entière
+     (4 × ln(0,8 refQ / Q) sous 0,8 refQ, rien au-dessus) − 2 si mouvement vertical. Deux pièges essayés :
+     une note par colonne fait venir deux colonnes voisines d'images différentes et hache le texte ; un bonus
+     de netteté (et non une simple pénalité) fait préférer des colonnes vues au bord de la fenêtre, écrasées
+     par le cylindre, et crée des sauts verticaux dans le panorama.
+   - Une image floue (Q < 0,5 refQ) n'est pas recalée sur le panorama, seulement sur l'image d'avant : son
+     gradient écrasé se recale mal sur un panorama net (simulation : circonférence fausse de 25 %).
 4. **Fermeture de boucle** (tour complet) : on compare l'image en cours au panorama, loin de la
    position actuelle (NCC sur le gradient, avec une petite recherche verticale). Le tour est validé
    si NCC ≥ 0,3, avec au moins 0,12 d'écart sur le 2e meilleur candidat, et deux détections concordantes
@@ -159,14 +178,28 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    - Comparer le panorama à lui-même en gradient ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
      panorama donne 0,56.
 5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
-   Le scan se termine dès qu'il ne reste que des trous de 4 colonnes au plus sur le tour (en pratique,
-   dès que le tour est reconnu) ; la mise à plat comble ces trous avec les colonnes voisines. La jauge en bas de l'écran (rouge → orange → vert) monte
-   jusqu'à 60 % d'après la longueur du panorama, puis affiche la couverture réelle. Le panneau affiche
-   aussi la cadence de traitement (images/s), utile pour diagnostiquer un téléphone lent.
+   Le scan se termine quand il ne reste, sur le tour, que des trous de 4 colonnes au plus parmi les colonnes
+   **nettes** (v0.11 : avant, il suffisait que le tour soit reconnu, même avec des zones floues). Sinon le
+   message « Continuez, plus lentement » s'affiche et la jauge ne monte qu'avec les zones vues nettes.
+   La mise à plat comble les petits trous avec les colonnes voisines.
+   - **Diamètre** : rien ne suppose de diamètre (tour reconnu par fermeture de boucle, panorama de 12 000
+     colonnes). Mais la jauge plafonnait à 60 % dès 8 largeurs de cadre : avec un objet plus gros (spray
+     nasal testé par l'utilisateur), elle restait bloquée à 60 % bien avant le tour complet. Elle tend
+     maintenant vers 60 % sans s'y bloquer (60 × (1 − e^(−longueur / 5 largeurs))), et « tour pas reconnu »
+     n'apparaît qu'après 16 largeurs de cadre.
+   Le panneau affiche aussi la cadence de traitement (images/s), utile pour diagnostiquer un téléphone lent.
 6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
    sombre sur presque toute la hauteur (médiane de l'obscurité entre 5 et 95 % de la hauteur, avec un
-   contraste supérieur à 25 niveaux). L'image commence juste après et finit juste avant. La partie qui
-   dépasse le panorama est prise un tour plus tôt, après recalage vertical des deux passages.
+   contraste supérieur à 25 niveaux). L'image commence juste après et finit juste avant.
+   - **Par blocs de 32 colonnes (v0.11)** : on suit le panorama tel quel ; un bloc flou, manquant ou au-delà
+     du panorama est pris dans un autre tour (x ± kP), recalé en largeur (±10) et en hauteur (±32 px) par
+     Pearson sur un bloc vu en entier des deux côtés (sur quelques colonnes, le recalage se trompait), le
+     dernier recalage connu servant ensuite. On ne change de tour que si le bloc courant a des colonnes floues :
+     changer sans nécessité ajoutait des raccords.
+   - Simulations (vidéo de test, ~2 px/image) : aller avec flou de 7 px sur deux passages puis retour net, et
+     aller avec deux passages accélérés ×5 et floutés. L'ancien moteur : circonférence 493 et 475, texte haché
+     ou flou ; le nouveau : 450 et 444, étiquette lisible en entier. Vidéo de test seule : 455 (ancien 460,
+     attendu ~447 à 480 px de haut).
 
 ## Vidéo de test et vérité terrain
 
@@ -185,6 +218,8 @@ Cat **562680**, Lot **6089689** (vérifié sur l'image brute n° 145), Exp 2020-
 
 ## Limites connues et suite
 
+- À vérifier sur de vraies vidéos : les seuils de netteté (0,45 × refQ, plancher 1,5) viennent de la vidéo de
+  test et de flous simulés. Si le scan ne finit jamais avec « Continuez, plus lentement », baisser `NET`.
 - Quelques raccords restent visibles dans le texte (« Mo**ı**se », « Res**s**earch »). Pistes :
   adoucir les jonctions entre captures, et mieux gérer les zones blanches sans texture.
 - La jonction n'est pas détectée si l'étiquette se chevauche elle-même (pas d'espace visible).
