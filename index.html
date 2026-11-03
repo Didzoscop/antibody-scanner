@@ -88,6 +88,7 @@ html[lang="en"] .fl-fr,html[lang="fr"] .fl-en{display:none}
 .roi .tl{left:-17px;top:-17px;cursor:nwse-resize}.roi .tr{right:-17px;top:-17px;cursor:nesw-resize}
 .roi .bl{left:-17px;bottom:-17px;cursor:nesw-resize}.roi .br{right:-17px;bottom:-17px;cursor:nwse-resize}
 .roi.locked{cursor:default}.roi.locked .h{display:none}
+.roi .band{position:absolute;top:0;bottom:0;border-left:2px dashed var(--paper);border-right:2px dashed var(--paper);pointer-events:none}
 .roi[data-tone="wait"]{border-color:var(--wait)}
 .roi[data-tone="ok"]{border-color:var(--ok)}
 /* rotation trop rapide : cadre rouge qui clignote */
@@ -217,7 +218,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <section class="scanview hidden" id="scan">
   <div class="cam" id="cam">
     <video id="video" playsinline muted autoplay></video>
-    <div class="roi hidden" id="roi"><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
+    <div class="roi hidden" id="roi"><i class="band hidden" id="band"></i><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
     <div class="spin hidden" id="spin"></div>
     <div class="topl">
       <button class="flag" id="btnBack" type="button" data-i18n-aria="back"><svg viewBox="0 0 11 11" fill="currentColor"><path d="M4 1h2v2H4zM2 3h2v2H2zM0 5h11v1H0zM2 6h2v2H2zM4 8h2v2H4z"/><path d="M1 4h2v3H1z"/></svg></button>
@@ -274,7 +275,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.11';
+const VERSION = 'v0.12';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -298,12 +299,13 @@ const I18N = {
     regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
     viewTitle: 'Scan of {d}', save: 'Save', del: 'Delete', delAsk: 'Delete this scan?', alt: 'Unrolled label', file: 'label',
     run: 'Run scan', stop: 'Stop', starting: 'Starting…', camFail: 'Camera unavailable', https: ' (the page must be opened over https)',
-    zone: ['Scan zone', 'Empty holder: drag the frame onto the holder window (move, corners, pinch), then run the scan.'],
+    zone: ['Scan zone', 'Empty holder: drag the frame onto the holder window (move, corners, pinch), then run the scan. It can be wider than the vial: the app measures the vial and picks the strip to use.'],
     wait: ['Insert a vial', 'The scan starts as soon as a vial is detected in the holder.'],
     scan: ['Turn the vial', 'Slowly, either way, until the bar is full.'],
     done: ['Scan complete', 'Saved to the register. Remove the vial and insert the next one.'],
     next: ['Next vial', 'Insert the next vial in the holder.'],
     tooFast: ['Too fast!', 'Slow down until the frame stops blinking red: steady and slow is what works.'],
+    measure: ['Turn the vial', 'Measuring the vial…'],
     settle: ['Vial detected', 'Let go of the vial for a moment: the scan starts once it is still.'],
     blurry: ['Keep turning, more slowly', 'Some parts of the label were only seen blurred. The bar fills up as they are seen sharp.'],
     removed: 'Vial removed before the scan finished. Put it back to start again.',
@@ -325,12 +327,13 @@ const I18N = {
     regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
     viewTitle: 'Scan du {d}', save: 'Enregistrer', del: 'Supprimer', delAsk: 'Supprimer ce scan ?', alt: 'Étiquette déroulée', file: 'etiquette',
     run: 'Lancer le scan', stop: 'Stop', starting: 'Démarrage…', camFail: 'Caméra inaccessible', https: ' (la page doit être ouverte en https)',
-    zone: ['Zone de scan', 'Socle vide : placez le cadre sur la fenêtre du socle (glisser, coins, pincer), puis lancez le scan.'],
+    zone: ['Zone de scan', "Socle vide : placez le cadre sur la fenêtre du socle (glisser, coins, pincer), puis lancez le scan. Il peut déborder de la fiole : l'app mesure la fiole et choisit elle-même la bande à utiliser."],
     wait: ['Posez une fiole', "Le scan démarre dès qu'une fiole est détectée dans le socle."],
     scan: ['Tournez la fiole', "Doucement, dans un sens ou dans l'autre, jusqu'à ce que la barre soit pleine."],
     done: ['Scan terminé', 'Enregistré dans le registre. Retirez la fiole et posez la suivante.'],
     next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.'],
     tooFast: ['Trop vite !', "Ralentissez jusqu'à ce que le cadre ne clignote plus en rouge : régulier et lent, c'est ce qui marche."],
+    measure: ['Tournez la fiole', 'Mesure de la fiole…'],
     settle: ['Fiole détectée', "Lâchez la fiole un instant : le scan démarre dès qu'elle ne bouge plus."],
     blurry: ['Continuez, plus lentement', "Certaines zones de l'étiquette n'ont été vues que floues. La barre se remplit à mesure qu'elles sont vues nettes."],
     removed: 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.',
@@ -568,6 +571,7 @@ const det = { bg: null, bgFrames: 0, occ: false, n: 0 };
 function setStatus(big, small, cls){ $('stBig').textContent = big; $('stSmall').textContent = small; $('stSmall').className = 'small' + (cls ? ' ' + cls : ''); }
 function setState(s, small){
   state = s; const [b, m] = I18N.en[s] ? t(s) : ['', '']; setStatus(b, small || m);
+  if (s !== 'scan' && s !== 'done'){ probe = null; band = null; drawBand(); }
   const zone = s === 'zone';
   updateLensBtn();
   roiEl.classList.toggle('locked', !zone);
@@ -616,13 +620,15 @@ $('btnRun').onclick = () => {
 /* Lecture de la zone. On découpe la zone dans l'image vidéo AVANT d'en copier les pixels (createImageBitmap) :
    copier une image 4K entière pour n'en garder qu'une bande coûte ~20 ms sur PC (bien plus sur téléphone),
    contre ~1,5 ms pour la zone seule. Une seule lecture par image sert à la fois au scan et à la détection du socle. */
-// Cadre large : on n'en traite que la bande centrale, d'au plus un quart de sa hauteur. Sur un cylindre, le texte des
-// bords est écrasé et défile moins vite qu'au centre, ce qui empêche le panorama de se recoller sur lui-même.
-// Simulation avec un cadre couvrant 80 % du diamètre : raccord 0,45 et circonférence fausse de 6 % sur tout le cadre,
-// contre 0,96 et juste sur la moitié centrale. La fenêtre du socle (8 × 39 mm, rapport 0,2) n'est pas rognée : une
-// bande plus étroite que ça décroche sur la vidéo de test, très tremblée.
-const MAX_ASPECT = .25;
+// On lit tout le cadre (au plus 0,6 × sa hauteur en largeur, pour le coût), mais le panorama n'utilise qu'une bande :
+// sur un cylindre, le texte des bords est écrasé et défile moins vite qu'au centre, ce qui empêche le panorama de se
+// recoller sur lui-même. Au début du scan, RadiusProbe mesure le rayon de la fiole pendant qu'elle tourne, et la bande
+// fait 1,2 × le rayon (60 % du diamètre), centrée sur l'axe, sans sortir de la zone qui défile (fenêtre du socle).
+// Avant (v0.11) : bande d'au plus 0,25 × la hauteur du cadre ; sur les fioles de l'utilisateur (diamètre ~0,24 × la
+// hauteur, d'après la circonférence), elle couvrait toute la fiole, bords écrasés compris.
+const MAX_ASPECT = .6, BAND_R = 1.2, DEFAULT_ASPECT = .25;
 let crop = null;   // rectangle lu dans l'image vidéo (pixels)
+let probe = null, band = null;   // band : { x0, w } en pixels de travail, dans le cadre lu
 function setupCrop(){
   const vw = video.videoWidth, vh = video.videoHeight, rw = roi.w * vw, rh = roi.h * vh, cw = Math.min(rw, MAX_ASPECT * rh);
   crop = { x: Math.round(roi.x * vw + (rw - cw) / 2), y: Math.round(roi.y * vh), w: Math.max(8, Math.round(cw)), h: Math.round(rh) };
@@ -669,10 +675,43 @@ function detect(g){ // renvoie true/false une fois l'état stable (6 images de s
   return det.occ;
 }
 
-function startEngine(){ engine = new ScanEngine(W, H); setState('scan'); drawProgress(null); }
+// Le scan commence par mesurer la fiole (RadiusProbe), puis le moteur ne reçoit que la bande choisie
+function startEngine(){ engine = null; probe = new RadiusProbe(W, H); band = null; drawBand(); setState('scan'); setStatus(...t('measure')); drawProgress(null); }
+function chooseBand(m){
+  const def = Math.min(W, Math.round(DEFAULT_ASPECT * H)) & ~1;
+  let x0 = (W - def) >> 1, w = def;
+  if (m){
+    const l = Math.max(0, m.xl, Math.round(m.xc - BAND_R * m.R / 2)), r = Math.min(W, m.xr, Math.round(m.xc + BAND_R * m.R / 2));
+    if (r - l >= 32){ x0 = l; w = (r - l) & ~1; }
+  }
+  return { x0, w };
+}
+function cutBand(px){
+  const { x0, w } = band, out = new Uint8ClampedArray(w * H * 4);
+  for (let y = 0; y < H; y++) out.set(px.subarray((y * W + x0) * 4, (y * W + x0 + w) * 4), y * w * 4);
+  return out;
+}
+// la bande utilisée, en pointillés dans le cadre
+function drawBand(){
+  const el = $('band');
+  if (!band || !crop){ el.classList.add('hidden'); return; }
+  const vw = video.videoWidth, rx = roi.x * vw, rw = roi.w * vw, k = crop.w / W;
+  el.style.left = (crop.x - rx + band.x0 * k) / rw * 100 + '%'; el.style.width = band.w * k / rw * 100 + '%';
+  el.classList.remove('hidden');
+}
 function scanFrame(px){
+  if (probe){
+    if (!probe.push(px)){ if (probe.frames % 10 === 0) setStatus(...t('measure')); return; }
+    const m = probe.result(); probe = null;
+    band = chooseBand(m); drawBand();
+    engine = new ScanEngine(band.w, H);
+    // circonférence attendue : 2πR, sous-estimée de 10 à 20 % par la perspective ; on écarte les tours plus courts
+    // que 0,7 × cette valeur (vidéo de test : un faux tour aux 2/3 de la vraie circonférence sinon)
+    if (m){ engine.expectP = 2 * Math.PI * m.R; engine.minP = Math.max(engine.minP, .7 * engine.expectP); }
+    return;
+  }
   if (!engine) return;
-  const r = engine.push(px);
+  const r = engine.push(cutBand(px));
   drawProgress(r);
   // trop vite : cadre rouge qui clignote, avant que le suivi ne décroche (au-delà d'environ 0,35 × la largeur
   // de la bande par image, le panorama se brouille et la circonférence devient fausse ou introuvable)
@@ -681,14 +720,16 @@ function scanFrame(px){
   else if (r.settling) setStatus(...t('settle'));
   // le moteur ne suppose aucun diamètre : « tour pas reconnu » seulement après un long panorama (16 largeurs de
   // cadre, soit trois tours d'une fiole ordinaire), pour ne pas presser à tort sur une fiole plus grosse
-  else if (r.frames % 10 === 0) setStatus(...t(r.period ? (r.blurry > .02 ? 'blurry' : 'scan') : r.extent > 16 * W ? 'noTurn' : 'scan'));
+  else if (r.frames % 10 === 0) setStatus(...t(r.period ? (r.blurry > .02 ? 'blurry' : 'scan') : r.extent > Math.max(16 * engine.W, 2.5 * engine.expectP) ? 'noTurn' : 'scan'));
   if (r.done) finish();
 }
 // Avant le tour complet, la circonférence est inconnue (le moteur ne suppose aucun diamètre) : la jauge avance d'après
 // la longueur du panorama en s'approchant de 60 % sans jamais s'y bloquer. Elle plafonnait à 60 % dès 8 largeurs de cadre,
 // ce qui faisait croire à un blocage sur un objet plus gros qu'une fiole. Ensuite : part du tour vue NETTE.
 function drawProgress(r){
-  const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(60 * (1 - Math.exp(-r.extent / (5 * W)))) : 0;
+  // (avec la circonférence attendue, la jauge suit le vrai tour ; elle reste approximative, d'où la courbe)
+  const scale = engine && engine.expectP ? engine.expectP / 2 : 5 * (engine ? engine.W : W);
+  const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(60 * (1 - Math.exp(-r.extent / scale))) : 0;
   setGauge(pct);
   if (r){ // diagnostic : cadence de traitement et meilleur raccord trouvé (NCC / 2e candidat)
     const now = performance.now(); fpsHist.push(now); while (fpsHist.length > 30) fpsHist.shift();
@@ -718,12 +759,12 @@ async function stopScan(){
   const e = engine; engine = null;
   setStatus(t('finishing'), '');
   await new Promise(r => setTimeout(r, 50));   // laisse le message s'afficher avant le calcul
-  const P = e.umax - e.umin > 2.5 * W ? e.periodFromPanorama() : 0;
+  const P = e.umax - e.umin > 2.5 * e.W ? e.periodFromPanorama() : 0;
   if (P){ e.period = P; engine = e; finish(); return; }
   setState('zone'); savePartial(e);
 }
 async function savePartial(e){
-  if (e.umax - e.umin < 2 * W) return;
+  if (e.umax - e.umin < 2 * e.W) return;
   const canvas = e.panorama();
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
   try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, partial: true }); renderRegister(); toast(t('partialSaved')); }
@@ -757,12 +798,12 @@ function stopLoop(){
 // vidéo de test : on avance image par image pour traiter chaque image, quelle que soit la vitesse de l'appareil
 function stepFile(ts){
   const fps = +(params.get('fps') || 60);
-  if (state !== 'scan' || !engine) return;
-  if (ts > video.duration){ if (engine.period) finish(); else { engine = null; setState('zone', t('videoEnd')); } return; }
+  if (state !== 'scan' || !(engine || probe)) return;
+  if (ts > video.duration){ if (engine && engine.period) finish(); else { engine = null; setState('zone', t('videoEnd')); } return; }
   video.addEventListener('seeked', async () => {
-    if (state !== 'scan' || !engine) return;
-    const px = await grab(); if (state !== 'scan' || !engine) return;
-    scanFrame(px); if (state === 'scan' && engine) stepFile(ts + 1 / fps);
+    if (state !== 'scan' || !(engine || probe)) return;
+    const px = await grab(); if (state !== 'scan' || !(engine || probe)) return;
+    scanFrame(px); if (state === 'scan' && (engine || probe)) stepFile(ts + 1 / fps);
   }, { once: true });
   video.currentTime = ts;
 }

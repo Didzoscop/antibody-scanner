@@ -70,6 +70,23 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
 
 ## Algorithme (engine.js)
 
+0. **Bande utilisée (v0.12, `RadiusProbe` + `chooseBand` dans index.html)** : l'app lit tout le cadre (au plus
+   0,6 × sa hauteur en largeur) mais le panorama n'utilise qu'une bande de 1,2 × le rayon (60 % du diamètre),
+   centrée sur l'axe de la fiole, sans sortir de la zone qui défile. Le rayon est mesuré pendant la première
+   rotation (« Mesure de la fiole… », ~50 px de défilement) : vitesse apparente v0 √(1 − (d/R)²) mesurée dans
+   des sous-bandes de 16 px, ajustement de R et de l'axe. Les montants immobiles d'un socle sont écartés.
+   - Pourquoi : 4 scans de l'utilisateur (fioles BioLegend, R&D, BD), circonférences 320–380 px à 480 px de haut,
+     donc diamètre ~0,24 × la hauteur du cadre ; l'ancienne bande (≤ 0,25 × la hauteur) couvrait toute la fiole,
+     bords écrasés compris : texte doublé ou coupé là où l'étiquette fait le tour. L'idée d'une largeur fixe
+     par rapport à la longueur du cadre ne marche pas : c'est le diamètre qui compte (vidéo de test, bandes de
+     0,15 / 0,12 / 0,10 × la hauteur : faux demi-tour, texte coupé).
+   - Vidéo de test : cadre d'origine (90 px) → R mesuré, circonférence attendue 446, trouvée 463, bande 64 px ;
+     cadre élargi à 244 px montrant les montants du socle → bande de 74 px choisie seule, 464, étiquette propre
+     (tout le cadre : aucun tour trouvé). R varie de 62 à 88 selon le passage mesuré (vrai ~72).
+   - Circonférence attendue 2πR : sert à la jauge avant le tour, et `minP` = 0,7 × 2πR écarte les faux tours
+     (sinon, faux tour aux 2/3 sur la vidéo de test). Si le profil est plat (cadre plus étroit que la moitié de la
+     fiole), pas de mesure : bande centrale de 0,25 × la hauteur, comme avant.
+
 1. **Zone d'intérêt** : on ne traite que le rectangle choisi par l'utilisateur, mémorisé dans
    localStorage. La hauteur de travail est plafonnée à 480 px.
    - **Vidéo brute de l'utilisateur (v0.10)** : fiole tenue par le haut, tournée aux doigts, 4K 30 i/s, 16 s

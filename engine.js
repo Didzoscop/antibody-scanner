@@ -20,6 +20,9 @@ class ScanEngine{
     this.best = new Float32Array(CAP).fill(-1e9); this.filled = new Uint8Array(CAP);
     this.qcol = new Float32Array(CAP); this.steady = new Uint8Array(CAP);   // netteté (Q) et stabilité verticale de la capture gardée
     this.qHist = []; this.refQ = REFQ_MIN; this.settled = 0; this.started = false;
+    // circonférence minimale (colonnes). Sans rien savoir : π × la bande, posée sur la fiole. Quand le rayon a été
+    // mesuré (RadiusProbe), l'interface la relève près de la circonférence attendue, ce qui écarte les faux tours.
+    this.minP = MINP * W; this.expectP = 0;
     this.prevFx = null; this.pos = 0; this.ypos = 0; this.lastDx = 0;
     this.frames = 0; this.rejected = 0; this.sharpHist = []; this.umin = 1e9; this.umax = -1e9;
     this.closures = []; this.period = 0; this.cl = null; this.trace = []; this.hintP = 0; this.hintTries = 0;
@@ -164,7 +167,7 @@ class ScanEngine{
     if (f.qf > 0 && f.qf < NET * this.refQ) this.rejected++;
     this.write(f, steady);
     if (!this.period){
-      if (!this.cl && this.umax - this.umin > 3.5 * this.W) this.startClosure(f);
+      if (!this.cl && this.umax - this.umin > Math.max(3.5 * this.W, this.minP + this.W)) this.startClosure(f);
       if (this.cl) this.stepClosure();
     }
     const cov = this.period ? this.coverage() : { coverage: 0, gap: 0, blurry: 0 };
@@ -222,7 +225,7 @@ class ScanEngine{
     const per = (2 * Math.floor(R / this.closDy) + 1) * cols.length * ys.length;
     for (let budget = this.ops; cl.u0 < end && budget > 0; cl.u0 += 2){
       const u0 = cl.u0;
-      if (Math.abs(u0 - ucur) < MINP * W) continue;   // un tour fait au moins π × la largeur de la bande (elle est posée sur la fiole)
+      if (Math.abs(u0 - ucur) < this.minP) continue;   // un tour fait au moins π × la largeur de la bande (elle est posée sur la fiole)
       if (this.hintP && Math.abs(Math.abs(ucur - u0) - this.hintP) > 12) continue;   // confirmation rapide
       let ok = true; for (let k = 0; k < cols.length; k++) if (!filled[u0 + cs * k - 1] || !filled[u0 + cs * k + 1]){ ok = false; break; }
       if (!ok) continue;
@@ -254,7 +257,7 @@ class ScanEngine{
     // de deux tours, l'image ressemble autant à la zone vue un tour plus tôt qu'à celle vue deux tours plus tôt.
     // Ces pics-là, espacés d'un multiple du même tour, confirment le tour au lieu de le contredire.
     const close = peaks.filter(p => p.c > top.c - this.minGap);
-    const P = close.reduce((m, p) => p.d > MINP * W && p.d < m ? p.d : m, Infinity);
+    const P = close.reduce((m, p) => p.d > this.minP && p.d < m ? p.d : m, Infinity);
     const periodic = p => { const k = Math.max(1, Math.round(p.d / P)); return Math.abs(p.d - k * P) <= Math.max(6, .04 * p.d); };
     const second = peaks.filter(p => !(P < Infinity && periodic(p))).reduce((m, p) => p.c > m ? p.c : m, -1);
     this.trace.push({ frame: this.frames, c: +top.c.toFixed(3), second: +second.toFixed(3), P: P < Infinity ? P : 0 });   // pour le diagnostic
@@ -388,7 +391,7 @@ class ScanEngine{
       return best;
     };
     const curve = [];
-    for (let P = Math.round(MINP * W); P <= umax - umin - 1.5 * W; P += 2) curve.push({ P, c: corr(P) });
+    for (let P = Math.round(this.minP); P <= umax - umin - 1.5 * W; P += 2) curve.push({ P, c: corr(P) });
     if (curve.length < 3) return 0;
     const top = curve.reduce((m, v) => v.c > m.c ? v : m);
     const sorted = curve.map(v => v.c).sort((p, q) => p - q), med = sorted[sorted.length >> 1];
@@ -421,5 +424,80 @@ class ScanEngine{
     return canvas;
   }
 }
-window.ScanEngine = ScanEngine;
+
+/* Rayon de la fiole, mesuré pendant qu'elle tourne. Sur un cylindre, l'étiquette défile moins vite près des bords :
+   à la distance d de l'axe, la vitesse apparente vaut v0 √(1 − (d/R)²). On mesure le défilement dans des sous-bandes
+   de 16 px réparties sur tout le cadre, et on ajuste R et la position de l'axe. Ça marche à travers la fenêtre d'un
+   socle (les montants immobiles sont écartés) comme sur une fiole cadrée bord à bord.
+   Pourquoi : traiter toute la largeur de la fiole écrase les bords et fausse le raccord (circonférence fausse de
+   quelques %, texte doublé ou coupé là où l'étiquette fait le tour). Vidéo de test, cadre élargi à 244 px montrant
+   les montants du socle : R mesuré 62 (~72 d'après la circonférence, la perspective le sous-estime) ; tout le cadre :
+   aucun tour trouvé ; bande de 1,2 R ou 1,0 R centrée sur l'axe : étiquette complète et propre ; 1,4 R : faux tour. */
+class RadiusProbe{
+  constructor(W, H){
+    this.W = W; this.H2 = H >> 1; this.SB = 16; this.c = [];
+    for (let x = this.SB / 2 + 12; x <= W - this.SB / 2 - 12; x += 8) this.c.push(x);
+    this.tot = new Float64Array(this.c.length); this.moved = 0; this.frames = 0; this.prev = null;
+  }
+  grad(px){
+    const { W, H2 } = this, g = new Float32Array(W), fx = new Float32Array(W * H2);
+    for (let y = 0; y < H2; y++){
+      for (let x = 0; x < W; x++){ const i = (2 * y * W + x) * 4; g[x] = px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114; }
+      for (let x = 1; x < W - 1; x++) fx[y * W + x] = g[x + 1] - g[x - 1];
+    }
+    return fx;
+  }
+  // décalage horizontal de la sous-bande centrée en c (au demi-pixel près, par parabole)
+  shift(a, b, c){
+    const { W, H2, SB } = this, S = 12, cost = new Float64Array(2 * S + 1);
+    let best = Infinity, bx = 0;
+    for (let dx = -S; dx <= S; dx++){
+      let m = Infinity;
+      for (let dy = -1; dy <= 1; dy++){
+        let s = 0;
+        for (let y = 6; y < H2 - 6; y += 4){ const rb = y * W, ra = (y - dy) * W - dx; for (let x = c - SB / 2; x < c + SB / 2; x++){ const d = b[rb + x] - a[ra + x]; s += d * d; } }
+        if (s < m) m = s;
+      }
+      cost[dx + S] = m; if (m < best){ best = m; bx = dx; }
+    }
+    const i = bx + S; let sub = 0;
+    if (i > 0 && i < 2 * S){ const l = cost[i - 1], r = cost[i + 1], den = l - 2 * best + r; if (den > 0) sub = .5 * (l - r) / den; }
+    return bx + sub;
+  }
+  // renvoie true quand la mesure est faite (assez de rotation, ou trop longtemps sans)
+  push(px){
+    const fx = this.grad(px); this.frames++;
+    if (this.prev){
+      const mid = this.c.reduce((m, x, j) => Math.abs(x - this.W / 2) < Math.abs(this.c[m] - this.W / 2) ? j : m, 0);
+      const vm = this.shift(this.prev, fx, this.c[mid]);
+      if (Math.abs(vm) >= 1){   // on ne compte que les images où le centre défile, dans le sens du centre
+        const sg = Math.sign(vm);
+        this.c.forEach((x, j) => { this.tot[j] += sg * (j === mid ? vm : this.shift(this.prev, fx, x)); });
+        this.moved += Math.abs(vm);
+      }
+    }
+    this.prev = fx;
+    return this.moved >= 50 || this.frames >= 150;
+  }
+  // { R, xc } en pixels du cadre, ou null si le profil ne permet pas de conclure (cadre entièrement sur la fiole)
+  result(){
+    const mx = Math.max(...this.tot); if (!(mx > 0) || this.moved < 25) return null;
+    const pts = this.c.map((x, j) => [x, this.tot[j] / mx]).filter(p => p[1] > .5);
+    if (pts.length < 5) return null;
+    const W = this.W; let best = [Infinity];
+    for (let xc = pts[0][0]; xc <= pts[pts.length - 1][0]; xc += 1) for (let R = 8; R <= 2 * W; R += 1){
+      let e = 0, sv = 0, sp = 0;
+      for (const [x, v] of pts){ const u = 1 - ((x - xc) / R) ** 2; const p = u > 0 ? Math.sqrt(u) : 0; sv += v * p; sp += p * p; }
+      const v0 = sp ? sv / sp : 1;
+      for (const [x, v] of pts){ const u = 1 - ((x - xc) / R) ** 2; const p = u > 0 ? v0 * Math.sqrt(u) : 0; e += (p - v) ** 2; }
+      if (e < best[0]) best = [e, xc, R];
+    }
+    const [e, xc, R] = best;
+    // profil plat (cadre plus étroit que la moitié de la fiole) : on ne peut rien dire du rayon
+    if (e / pts.length > .004 || R >= 1.5 * W) return null;
+    // zone où l'étiquette défile vraiment (fenêtre du socle) : la bande ne doit pas en sortir
+    return { R, xc, xl: pts[0][0] - this.SB / 2, xr: pts[pts.length - 1][0] + this.SB / 2 };
+  }
+}
+window.ScanEngine = ScanEngine; window.RadiusProbe = RadiusProbe;
 })();
