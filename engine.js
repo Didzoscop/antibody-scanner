@@ -18,14 +18,14 @@ class ScanEngine{
     this.mos = new Uint8ClampedArray(CAP * H * 4);      // panorama RGBA, rangée par rangée
     this.gm = new Float32Array(CAP * this.H2);           // panorama en gris (une ligne sur deux), colonne par colonne
     this.best = new Float32Array(CAP).fill(-1e9); this.filled = new Uint8Array(CAP);
-    this.qcol = new Float32Array(CAP); this.steady = new Uint8Array(CAP);   // netteté (Q) et stabilité verticale de la capture gardée
+    this.qcol = new Float32Array(CAP); this.qfcol = new Float32Array(CAP); this.steady = new Uint8Array(CAP);   // netteté (Q) et stabilité verticale de la capture gardée
     this.qHist = []; this.refQ = REFQ_MIN; this.settled = 0; this.started = false;
     // circonférence minimale (colonnes). Sans rien savoir : π × la bande, posée sur la fiole. Quand le rayon a été
     // mesuré (RadiusProbe), l'interface la relève près de la circonférence attendue, ce qui écarte les faux tours.
     this.minP = MINP * W; this.expectP = 0;
     this.prevFx = null; this.pos = 0; this.ypos = 0; this.lastDx = 0;
     this.frames = 0; this.rejected = 0; this.sharpHist = []; this.umin = 1e9; this.umax = -1e9;
-    this.closures = []; this.period = 0; this.cl = null; this.trace = []; this.hintP = 0; this.hintTries = 0;
+    this.closures = []; this.period = 0; this.verified = false; this.cl = null; this.trace = []; this.hintP = 0; this.hintTries = 0;
     this.regD = 3; this.regX = 14; this.regStep = 2; this.mosStep = 2; this.mosR = 10; this.mosaicOnly = false;
     this.ops = CLOSURE_OPS; this.ystep = 8; this.closR = 16; this.cstep = 4; this.closDy = 2; this.kappa = 4; this.coarseAlways = true; this.minC = .3; this.minGap = .12;
   }
@@ -163,19 +163,77 @@ class ScanEngine{
     // entièrement flou ne se juge pas net
     if (f.qf > 0){ this.qHist.push(f.qf); if (this.qHist.length > 900) this.qHist.shift(); }
     if (this.frames % 5 === 0 && this.qHist.length >= 8){ const s = [...this.qHist].sort((p, q) => p - q); this.refQ = Math.max(REFQ_MIN, s[Math.floor(s.length * .75)]); }
-    const steady = Math.abs(this.ypos - y0) <= 3;
+    const steady = Math.abs(this.ypos - y0) <= 5;
     if (f.qf > 0 && f.qf < NET * this.refQ) this.rejected++;
     this.write(f, steady);
     if (!this.period){
       if (!this.cl && this.umax - this.umin > Math.max(3.5 * this.W, this.minP + this.W)) this.startClosure(f);
       if (this.cl) this.stepClosure();
     }
+    if (this.period && !this.verified && this.frames % 8 === 0) this.verify();
     const cov = this.period ? this.coverage() : { coverage: 0, gap: 0, blurry: 0 };
-    // fin du scan : tout le tour a été vu NET, à de petits trous près (4 colonnes au plus, comblés par les voisines à
-    // la mise à plat). Reconnaître le tour ne suffit plus : une zone vue seulement floue fait continuer le scan.
-    const done = !!this.period && cov.gap <= 4;
+    // fin du scan : tour vérifié, et tout le tour vu NET, à de petits trous près (4 colonnes au plus, comblés par
+    // les voisines à la mise à plat). Une zone vue seulement floue fait continuer le scan.
+    const done = !!this.period && this.verified && cov.gap <= 4;
     return { frames: this.frames, rejected: this.rejected, extent: Math.max(0, this.umax - this.umin + 1), period: this.period,
-      coverage: cov.coverage, blurry: cov.blurry, tooFast: Math.abs(this.lastDx) > this.W * .2, done };
+      verified: this.verified, coverage: cov.coverage, blurry: cov.blurry, tooFast: Math.abs(this.lastDx) > this.W * .2, done };
+  }
+
+  // Vérification du tour (v0.13). Le raccord trouvé en direct n'est qu'un candidat : sur une étiquette blanche aux
+  // lignes de texte régulières, il se trompe. Vidéo de l'utilisateur dans le vrai socle (fiole BD Horizon) : tour
+  // validé à 462 colonnes alors que la vraie circonférence est 563, avant même que le tour soit fini. Au moment du
+  // faux raccord, la ressemblance en gris sur le court recouvrement était de 0,8, presque autant que pour le vrai.
+  // Une fois le panorama plus long d'un demi-tour que le candidat, on compare TOUTES les circonférences possibles
+  // (periodogram) : la vraie se détache (0,9 contre 0,67 pour 462 sur la vidéo). On garde le candidat s'il est le
+  // meilleur, on prend l'autre s'il est nettement meilleur, sinon on attend un peu plus de panorama.
+  verify(){
+    const ext = this.umax - this.umin + 1;
+    if (ext < 1.5 * this.period) return;
+    const pg = this.periodogram(); if (!pg) return;
+    this.trace.push({ frame: this.frames, c: +pg.c.toFixed(3), second: -1, P: pg.P, verify: this.period });
+    if (this.trace.length > 50) this.trace.shift();
+    if (Math.abs(pg.P - this.period) <= Math.max(4, .03 * this.period)){ if (pg.c >= .7){ this.verified = true; } return; }
+    // un autre tour est meilleur : on le prend s'il a assez de recouvrement pour être sûr, sinon on attend
+    // (très forte ressemblance : un quart de tour de recouvrement suffit ; sinon un demi-tour)
+    const over = ext - pg.P;
+    if ((pg.c >= .85 && over >= Math.max(72, .25 * pg.P)) || (pg.c >= .75 && over >= .5 * pg.P)){ this.period = pg.P; this.verified = true; }
+  }
+
+  // Ressemblance du panorama avec lui-même décalé de P colonnes, pour tous les P possibles. Par blocs de 24 colonnes,
+  // chacun avec son propre recalage vertical (la hauteur dérive au fil du tour : 20 à 50 px à la main), en niveaux de
+  // gris, puis médiane des blocs : un bloc raté (jonction, reflet) ne fausse pas tout. Renvoie { P, c } ou null.
+  periodogram(){
+    const { H2, gm, filled, umin, umax } = this, BL = 24, R = 16, ys = [];
+    for (let y = R + 2; y < H2 - R - 2; y += 4) ys.push(y);
+    const corr = P => {
+      const vals = [];
+      for (let a0 = umin; a0 + BL + P <= umax; a0 += BL){
+        let best = -2;
+        for (let dy = -R; dy <= R; dy += 2){
+          let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, m = 0;
+          for (let k = 0; k < BL; k += 2){
+            const a = a0 + k, b = a + P; if (!filled[a] || !filled[b]) continue;
+            for (const y of ys){ const va = gm[a * H2 + y], vb = gm[b * H2 + y + dy]; sa += va; sb += vb; saa += va * va; sbb += vb * vb; sab += va * vb; m++; }
+          }
+          if (m < ys.length * 4) continue;
+          const c = (sab - sa * sb / m) / Math.sqrt((saa - sa * sa / m) * (sbb - sb * sb / m) + 1e-9);
+          if (c > best) best = c;
+        }
+        if (best > -2) vals.push(best);
+      }
+      if (vals.length < 3) return -1;
+      vals.sort((p, q) => p - q); return vals[vals.length >> 1];
+    };
+    const curve = [];
+    for (let P = Math.round(this.minP); P + 3 * BL <= umax - umin; P += 3) curve.push({ P, c: corr(P) });
+    if (curve.length < 3) return null;
+    const top = curve.reduce((m, v) => v.c > m.c ? v : m);
+    // le plus petit pic proche du meilleur : un tour, pas deux (2P ressemble autant que P)
+    let pk = top;
+    for (let i = 1; i < curve.length - 1; i++){ const v = curve[i]; if (v.c >= top.c - .04 && v.c >= curve[i - 1].c && v.c >= curve[i + 1].c){ pk = v; break; } }
+    let P = pk.P, c = pk.c;
+    for (const q of [P - 2, P - 1, P + 1, P + 2]){ const cq = corr(q); if (cq > c){ c = cq; P = q; } }
+    return { P, c };
   }
 
   // Chaque colonne du panorama garde sa meilleure capture : la plus nette, prise au centre de la fenêtre et sans
@@ -193,7 +251,7 @@ class ScanEngine{
       const u = Math.round(x - this.pos) + OFF; if (u < 1 || u >= CAP - 1) continue;
       const s = -Math.abs(x - W / 2) / (W / 2) + frameScore;
       if (s <= best[u]) continue;
-      best[u] = s; filled[u] = 1; this.qcol[u] = f.q[x]; this.steady[u] = steady ? 1 : 0;
+      best[u] = s; filled[u] = 1; this.qcol[u] = f.q[x]; this.qfcol[u] = f.qf > 0 ? f.qf : 9; this.steady[u] = steady ? 1 : 0;
       if (u < this.umin) this.umin = u; if (u > this.umax) this.umax = u;
       for (let y = 0; y < H; y++){        // ligne du panorama = ligne de l'image - ypos
         const fy = y + yo, o = (y * CAP + u) * 4;
@@ -203,7 +261,10 @@ class ScanEngine{
       for (let y = 0; y < H2; y++){ const fy = Math.min(H2 - 1, Math.max(0, y + yo2)); gm[u * H2 + y] = f.g[fy * W + x]; }
     }
   }
-  good(u){ return this.filled[u] && this.steady[u] && this.qcol[u] >= NET * this.refQ; }
+  // Nette : zone nette, ou image entière nette. Le flou de bougé touche toute l'image ; une zone seule à Q bas dans
+  // une image nette, c'est le contenu (vidéo de l'utilisateur, fiole BioLegend : un trait horizontal donnait Q 0,1 à
+  // 0,7 dans les deux tours, et le scan ne finissait jamais).
+  good(u){ return this.filled[u] && this.steady[u] && (this.qcol[u] >= NET * this.refQ || this.qfcol[u] >= .7 * this.refQ); }
 
   // Fermeture de boucle : l'image en cours ressemble-t-elle à une zone du panorama vue loin d'ici ?
   // La recherche parcourt tout le panorama, ce qui coûte de plus en plus cher : on fige l'image au départ,
@@ -436,7 +497,7 @@ class ScanEngine{
 class RadiusProbe{
   constructor(W, H){
     this.W = W; this.H2 = H >> 1; this.SB = 16; this.c = [];
-    for (let x = this.SB / 2 + 12; x <= W - this.SB / 2 - 12; x += 8) this.c.push(x);
+    for (let x = this.SB / 2 + 24; x <= W - this.SB / 2 - 24; x += 8) this.c.push(x);   // marge = recherche (±24)
     this.tot = new Float64Array(this.c.length); this.moved = 0; this.frames = 0; this.prev = null;
   }
   grad(px){
@@ -448,20 +509,21 @@ class RadiusProbe{
     return fx;
   }
   // décalage horizontal de la sous-bande centrée en c (au demi-pixel près, par parabole)
-  shift(a, b, c){
-    const { W, H2, SB } = this, S = 12, cost = new Float64Array(2 * S + 1);
-    let best = Infinity, bx = 0;
+  shift(a, b, c, D = 1){
+    const { W, H2, SB } = this, S = 24, cost = new Float64Array(2 * S + 1);
+    let best = Infinity, bx = 0, bdy = 0;
     for (let dx = -S; dx <= S; dx++){
       let m = Infinity;
-      for (let dy = -1; dy <= 1; dy++){
+      for (let dy = -D; dy <= D; dy++){
         let s = 0;
         for (let y = 6; y < H2 - 6; y += 4){ const rb = y * W, ra = (y - dy) * W - dx; for (let x = c - SB / 2; x < c + SB / 2; x++){ const d = b[rb + x] - a[ra + x]; s += d * d; } }
-        if (s < m) m = s;
+        if (s < m){ m = s; if (m < best) bdy = dy; }
       }
       cost[dx + S] = m; if (m < best){ best = m; bx = dx; }
     }
     const i = bx + S; let sub = 0;
     if (i > 0 && i < 2 * S){ const l = cost[i - 1], r = cost[i + 1], den = l - 2 * best + r; if (den > 0) sub = .5 * (l - r) / den; }
+    this.dy = bdy;
     return bx + sub;
   }
   // renvoie true quand la mesure est faite (assez de rotation, ou trop longtemps sans)
@@ -469,8 +531,10 @@ class RadiusProbe{
     const fx = this.grad(px); this.frames++;
     if (this.prev){
       const mid = this.c.reduce((m, x, j) => Math.abs(x - this.W / 2) < Math.abs(this.c[m] - this.W / 2) ? j : m, 0);
-      const vm = this.shift(this.prev, fx, this.c[mid]);
-      if (Math.abs(vm) >= 1){   // on ne compte que les images où le centre défile, dans le sens du centre
+      const vm = this.shift(this.prev, fx, this.c[mid], 4);
+      // la fiole bouge encore verticalement (on l'enfonce dans le socle) : la mesure repart de zéro
+      if (Math.abs(this.dy) > 1){ this.tot.fill(0); this.moved = 0; }
+      else if (Math.abs(vm) >= 1){   // on ne compte que les images où le centre défile, dans le sens du centre
         const sg = Math.sign(vm);
         this.c.forEach((x, j) => { this.tot[j] += sg * (j === mid ? vm : this.shift(this.prev, fx, x)); });
         this.moved += Math.abs(vm);

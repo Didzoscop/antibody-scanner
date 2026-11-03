@@ -62,6 +62,11 @@ Le registre est stocké sur l'appareil (IndexedDB, base `antibody-scanner`).
   `unroll.py` fait la chaîne complète vidéo → étiquette à plat.
 - `docs/*.png` : résultats obtenus sur la vidéo de test.
 
+Rejouer tout l'enchaînement socle vide → fiole → échange (détection du socle comprise) : ajouter `&detect=1`
+(et `&fps=30` pour une vidéo à 30 i/s, `&start=` en secondes). Vidéo de l'utilisateur dans le socle :
+`?video=test/socle_2fioles.mp4&roi=0.4479,0.1389,0.1094,0.4907&fps=30&detect=1` → BioLegend (P 589) et BD (565),
+toutes deux complètes, jonction trouvée.
+
 Tester l'app sur une vidéo sans caméra :
 `http://localhost:8080/?video=test/fiole_siglec-f.mp4&roi=0.4792,0.2778,0.0307,0.2917`
 (marche aussi en ligne : `https://didzoscop.github.io/antibody-scanner/?video=test/fiole_siglec-f.mp4&roi=…`)
@@ -83,6 +88,9 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    - Vidéo de test : cadre d'origine (90 px) → R mesuré, circonférence attendue 446, trouvée 463, bande 64 px ;
      cadre élargi à 244 px montrant les montants du socle → bande de 74 px choisie seule, 464, étiquette propre
      (tout le cadre : aucun tour trouvé). R varie de 62 à 88 selon le passage mesuré (vrai ~72).
+   - Vidéo de l'utilisateur dans le socle (`test/socle_2fioles.mp4`, 1080p 30 i/s, pas dans le dépôt : 88 Mo) :
+     R mesuré 82–98 pour ~90–95 réels. Les à-coups du doigt vont jusqu'à 19 px/image : recherche portée à ±24 px.
+     La mesure repart de zéro tant que la fiole bouge verticalement (on l'enfonce dans le socle).
    - Circonférence attendue 2πR : sert à la jauge avant le tour, et `minP` = 0,7 × 2πR écarte les faux tours
      (sinon, faux tour aux 2/3 sur la vidéo de test). Si le profil est plat (cadre plus étroit que la moitié de la
      fiole), pas de mesure : bande centrale de 0,25 × la hauteur, comme avant.
@@ -194,6 +202,16 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
      pouvait servir l'ancien engine.js pendant 10 minutes après un push.
    - Comparer le panorama à lui-même en gradient ne marche pas (NCC ≈ 0,08). Comparer l'image brute au
      panorama donne 0,56.
+   - **Vérification du tour (v0.13, `verify` + `periodogram`)** : le raccord trouvé en direct n'est qu'un candidat.
+     Vidéo de l'utilisateur dans le vrai socle (fiole BD Horizon) : tour validé à 462 colonnes, vraie circonférence
+     563 (même motif à 563 et 1126), validé avant même la fin du tour ; au moment du faux raccord, la ressemblance
+     en gris sur le court recouvrement était de 0,8. Quand le panorama atteint 1,5 × le candidat, on compare toutes
+     les circonférences possibles : ressemblance en gris par blocs de 24 colonnes, chacun recalé verticalement
+     (±32 px), médiane des blocs ; plus petit pic à 0,04 du meilleur. Vrai 0,96, faux 0,67. On garde le candidat
+     s'il est le meilleur (≥ 0,7), on prend l'autre s'il est très fort (≥ 0,85 avec un quart de tour de
+     recouvrement, ou ≥ 0,75 avec un demi-tour). ~30 ms par essai sur PC, toutes les 8 images jusqu'à vérification.
+     Le scan demande donc ~1,5 tour (la vidéo de test, 1,2 tour, ne finit plus seule : Stop la termine).
+     Stop utilise aussi `periodogram` avant l'ancien `periodFromPanorama`.
 5. **Couverture** : une fois la période connue, chaque colonne est repliée modulo la circonférence.
    Le scan se termine quand il ne reste, sur le tour, que des trous de 4 colonnes au plus parmi les colonnes
    **nettes** (v0.11 : avant, il suffisait que le tour soit reconnu, même avec des zones floues). Sinon le
@@ -204,6 +222,9 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
      nasal testé par l'utilisateur), elle restait bloquée à 60 % bien avant le tour complet. Elle tend
      maintenant vers 60 % sans s'y bloquer (60 × (1 − e^(−longueur / 5 largeurs))), et « tour pas reconnu »
      n'apparaît qu'après 16 largeurs de cadre.
+   - **Netteté par image (v0.13)** : une colonne est nette si sa zone est nette OU si l'image entière l'est
+     (Q de l'image ≥ 0,7 refQ). Fiole BioLegend : un trait horizontal donnait Q local 0,1 à 0,7 dans les deux tours,
+     et le scan ne finissait jamais. Mouvement vertical toléré : 5 px par image (au lieu de 3).
    Le panneau affiche aussi la cadence de traitement (images/s), utile pour diagnostiquer un téléphone lent.
 6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
    sombre sur presque toute la hauteur (médiane de l'obscurité entre 5 et 95 % de la hauteur, avec un

@@ -275,7 +275,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.12';
+const VERSION = 'v0.13';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -306,6 +306,7 @@ const I18N = {
     next: ['Next vial', 'Insert the next vial in the holder.'],
     tooFast: ['Too fast!', 'Slow down until the frame stops blinking red: steady and slow is what works.'],
     measure: ['Turn the vial', 'Measuring the vial…'],
+    verify: ['Keep turning', 'Turn recognised: a little further to check it.'],
     settle: ['Vial detected', 'Let go of the vial for a moment: the scan starts once it is still.'],
     blurry: ['Keep turning, more slowly', 'Some parts of the label were only seen blurred. The bar fills up as they are seen sharp.'],
     removed: 'Vial removed before the scan finished. Put it back to start again.',
@@ -334,6 +335,7 @@ const I18N = {
     next: ['Fiole suivante', 'Posez la prochaine fiole dans le socle.'],
     tooFast: ['Trop vite !', "Ralentissez jusqu'à ce que le cadre ne clignote plus en rouge : régulier et lent, c'est ce qui marche."],
     measure: ['Tournez la fiole', 'Mesure de la fiole…'],
+    verify: ['Continuez de tourner', 'Tour reconnu : encore un peu pour le vérifier.'],
     settle: ['Fiole détectée', "Lâchez la fiole un instant : le scan démarre dès qu'elle ne bouge plus."],
     blurry: ['Continuez, plus lentement', "Certaines zones de l'étiquette n'ont été vues que floues. La barre se remplit à mesure qu'elles sont vues nettes."],
     removed: 'Fiole retirée avant la fin du scan. Reposez-la pour recommencer.',
@@ -611,7 +613,12 @@ $('file').onchange = e => { const f = e.target.files[0]; if (!f) return; source 
 $('btnRun').onclick = () => {
   if (state === 'zone'){
     store.set('roi', roi); setupCrop();
-    if (source.kind === 'file'){ startEngine(); stepFile(0); return; }   // vidéo de test : pas de détection du socle
+    // vidéo de test : pas de détection du socle (la fiole y est dès le début), sauf avec ?detect=1, qui rejoue tout
+    // l'enchaînement socle vide → fiole → échange (vidéo de l'utilisateur dans le vrai socle)
+    if (source.kind === 'file'){
+      if (FILE_DETECT){ det.bg = null; det.bgFrames = 0; det.occ = false; det.n = 0; setState('wait'); } else startEngine();
+      stepFile(+params.get('start') || 0); return;
+    }
     det.bg = null; det.bgFrames = 0; det.occ = false; det.n = 0; setState('wait');
   } else if (state === 'scan' && engine) stopScan();
   else { engine = null; setState('zone'); }
@@ -720,7 +727,7 @@ function scanFrame(px){
   else if (r.settling) setStatus(...t('settle'));
   // le moteur ne suppose aucun diamètre : « tour pas reconnu » seulement après un long panorama (16 largeurs de
   // cadre, soit trois tours d'une fiole ordinaire), pour ne pas presser à tort sur une fiole plus grosse
-  else if (r.frames % 10 === 0) setStatus(...t(r.period ? (r.blurry > .02 ? 'blurry' : 'scan') : r.extent > Math.max(16 * engine.W, 2.5 * engine.expectP) ? 'noTurn' : 'scan'));
+  else if (r.frames % 10 === 0) setStatus(...t(r.period ? (r.blurry > .02 ? 'blurry' : r.verified ? 'scan' : 'verify') : r.extent > Math.max(16 * engine.W, 2.5 * engine.expectP) ? 'noTurn' : 'scan'));
   if (r.done) finish();
 }
 // Avant le tour complet, la circonférence est inconnue (le moteur ne suppose aucun diamètre) : la jauge avance d'après
@@ -729,7 +736,8 @@ function scanFrame(px){
 function drawProgress(r){
   // (avec la circonférence attendue, la jauge suit le vrai tour ; elle reste approximative, d'où la courbe)
   const scale = engine && engine.expectP ? engine.expectP / 2 : 5 * (engine ? engine.W : W);
-  const pct = r && r.period ? Math.round(r.coverage * 100) : r ? Math.round(60 * (1 - Math.exp(-r.extent / scale))) : 0;
+  // tour repéré mais pas encore vérifié (il faut ~1,5 tour de panorama) : la jauge ne dépasse pas 95 %
+  const pct = r && r.period ? Math.round(r.verified ? r.coverage * 100 : Math.min(95, 100 * r.coverage, 100 * r.extent / (1.5 * r.period))) : r ? Math.round(60 * (1 - Math.exp(-r.extent / scale))) : 0;
   setGauge(pct);
   if (r){ // diagnostic : cadence de traitement et meilleur raccord trouvé (NCC / 2e candidat)
     const now = performance.now(); fpsHist.push(now); while (fpsHist.length > 30) fpsHist.shift();
@@ -750,7 +758,7 @@ async function finish(){
   try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); }
   catch (e){ toast(t('saveFail') + e.message); }
   toast(junction ? t('saved') : t('savedNoJ'));
-  if (source.kind === 'file' || !prefs.autoNext){ setState('zone', t('again')); return; }
+  if ((source.kind === 'file' && !FILE_DETECT) || !prefs.autoNext){ setState('zone', t('again')); return; }
   setState('done');
 }
 // Stop pendant le scan : si le panorama est assez long, on cherche le tour dans le panorama lui-même
@@ -759,7 +767,9 @@ async function stopScan(){
   const e = engine; engine = null;
   setStatus(t('finishing'), '');
   await new Promise(r => setTimeout(r, 50));   // laisse le message s'afficher avant le calcul
-  const P = e.umax - e.umin > 2.5 * e.W ? e.periodFromPanorama() : 0;
+  // tour pas encore vérifié : on compare toutes les circonférences possibles ; à défaut, le tour repéré en direct
+  const pg = e.umax - e.umin > 2.5 * e.W && !e.verified ? e.periodogram() : null;
+  const P = e.verified ? e.period : pg && pg.c >= .7 ? pg.P : e.period || (e.umax - e.umin > 2.5 * e.W ? e.periodFromPanorama() : 0);
   if (P){ e.period = P; engine = e; finish(); return; }
   setState('zone'); savePartial(e);
 }
@@ -773,10 +783,15 @@ async function savePartial(e){
 
 // boucle image par image : détection du socle et scan (une image à la fois, les suivantes attendent)
 let loopId = null, busy = false;
+const FILE_DETECT = params.get('detect') === '1';
 async function tick(){
   if (state === 'idle' || state === 'zone' || source.kind === 'file' || video.readyState < 2) return;
   const px = await grab();
   if (state === 'idle' || state === 'zone') return;
+  handleFrame(px);
+}
+// une image : détection du socle, puis scan
+function handleFrame(px){
   const occ = detect(grayOf(px));
   if (state === 'wait' || state === 'next'){ if (occ) startEngine(); }
   else if (state === 'scan'){
@@ -797,13 +812,14 @@ function stopLoop(){
 }
 // vidéo de test : on avance image par image pour traiter chaque image, quelle que soit la vitesse de l'appareil
 function stepFile(ts){
-  const fps = +(params.get('fps') || 60);
-  if (state !== 'scan' || !(engine || probe)) return;
-  if (ts > video.duration){ if (engine && engine.period) finish(); else { engine = null; setState('zone', t('videoEnd')); } return; }
+  const fps = +(params.get('fps') || 60), live = () => FILE_DETECT ? state !== 'idle' && state !== 'zone' : state === 'scan' && !!(engine || probe);
+  if (!live()) return;
+  if (ts > video.duration){ if (engine && engine.period) finish(); else { engine = null; probe = null; setState('zone', t('videoEnd')); } return; }
   video.addEventListener('seeked', async () => {
-    if (state !== 'scan' || !(engine || probe)) return;
-    const px = await grab(); if (state !== 'scan' || !(engine || probe)) return;
-    scanFrame(px); if (state === 'scan' && (engine || probe)) stepFile(ts + 1 / fps);
+    if (!live()) return;
+    const px = await grab(); if (!live()) return;
+    if (FILE_DETECT) handleFrame(px); else scanFrame(px);
+    if (live()) stepFile(ts + 1 / fps);
   }, { once: true });
   video.currentTime = ts;
 }
