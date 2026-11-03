@@ -64,7 +64,7 @@ Le registre est stocké sur l'appareil (IndexedDB, base `antibody-scanner`).
 
 Rejouer tout l'enchaînement socle vide → fiole → échange (détection du socle comprise) : ajouter `&detect=1`
 (et `&fps=30` pour une vidéo à 30 i/s, `&start=` en secondes). Vidéo de l'utilisateur dans le socle :
-`?video=test/socle_2fioles.mp4&roi=0.4479,0.1389,0.1094,0.4907&fps=30&detect=1` → BioLegend (P 589) et BD (565),
+`?video=test/local/socle_2fioles.mp4&roi=0.4479,0.1389,0.1094,0.4907&fps=30&detect=1` → BioLegend (P 589) et BD (565),
 toutes deux complètes, jonction trouvée.
 
 Tester l'app sur une vidéo sans caméra :
@@ -88,7 +88,7 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    - Vidéo de test : cadre d'origine (90 px) → R mesuré, circonférence attendue 446, trouvée 463, bande 64 px ;
      cadre élargi à 244 px montrant les montants du socle → bande de 74 px choisie seule, 464, étiquette propre
      (tout le cadre : aucun tour trouvé). R varie de 62 à 88 selon le passage mesuré (vrai ~72).
-   - Vidéo de l'utilisateur dans le socle (`test/socle_2fioles.mp4`, 1080p 30 i/s, pas dans le dépôt : 88 Mo) :
+   - Vidéo de l'utilisateur dans le socle (`test/local/socle_2fioles.mp4`, 1080p 30 i/s, pas dans le dépôt : 88 Mo, gardée sur le Mac de l’utilisateur ; `test/local/` est ignoré par git) :
      R mesuré 82–98 pour ~90–95 réels. Les à-coups du doigt vont jusqu'à 19 px/image : recherche portée à ±24 px.
      La mesure repart de zéro tant que la fiole bouge verticalement (on l'enfonce dans le socle).
    - Circonférence attendue 2πR : sert à la jauge avant le tour, et `minP` = 0,7 × 2πR écarte les faux tours
