@@ -23,7 +23,10 @@
   color-scheme:light;
 }
 *,*::before,*::after{box-sizing:border-box}
-html,body{height:100%}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+/* Safari sur iPhone grossit le texte en paysage si on ne l'en empêche pas : la carte d'accueil devenait plus large
+   que l'écran et il fallait faire défiler pour trouver « Start scan » */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{
   margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
   /* ByteBounce n'a pas tous les accents : Pixelify Sans prend le relais pour les caractères manquants */
@@ -66,7 +69,7 @@ html[lang="en"] .fl-fr,html[lang="fr"] .fl-en{display:none}
 .home-card{width:min(42rem,100%);display:flex;align-items:center;gap:1.6rem;
   background:var(--paper);border:var(--b) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:1.3rem 1.6rem}
 .home-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.9rem}
-.brand h1{font-size:1.5rem;margin:0;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.brand h1{font-size:clamp(1rem,3.4vw,1.5rem);margin:0;font-weight:700;letter-spacing:.08em;text-transform:uppercase;overflow-wrap:anywhere}
 .ver{font-size:.75rem;color:var(--muted)}
 .home .mascot{--s:6px}
 .home .tag{margin:-.6rem 0 0;color:var(--muted)}
@@ -128,8 +131,10 @@ html[lang="en"] .fl-fr,html[lang="fr"] .fl-en{display:none}
 /* ---------- Panneaux latéraux (paramètres, registre) ---------- */
 .sheet{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--paper);
   border-left:5px solid var(--ink);z-index:20;display:flex;flex-direction:column;
-  transform:translateX(105%);transition:transform .25s steps(5);padding-right:var(--sr)}
-.sheet.open{transform:none}
+  transform:translateX(105%);transition:transform .25s steps(5),visibility 0s .25s;padding-right:var(--sr);visibility:hidden}
+/* fermé, le panneau est invisible : sinon Safari sur iPhone laisse faire défiler la page jusqu'à lui (il attend à
+   droite de l'écran), et l'accueil se décalait, bouton « Start scan » hors de l'écran */
+.sheet.open{transform:none;visibility:visible;transition:transform .25s steps(5)}
 @media (prefers-reduced-motion: reduce){.sheet{transition:none}}
 .sheet-head{display:flex;align-items:center;gap:.5rem;padding:.5rem 1rem;border-bottom:5px solid var(--ink)}
 .sheet-head h2{margin:0 auto 0 0;font-size:1.2rem;text-transform:uppercase;letter-spacing:.06em}
@@ -190,6 +195,8 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
   .swap{width:84px;height:116px}
 }
 @media (max-height:360px){.home .mascot{--s:4px}.home .tag{display:none}}
+/* écran étroit (encoche de l'iPhone en paysage) : la mascotte laisse la place aux boutons */
+@media (max-width:620px){.home .mascot{display:none}.home-card{padding:1rem}.btn.start{font-size:1.25rem}}
 </style>
 </head>
 <body>
@@ -275,7 +282,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="engine.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.13';
+const VERSION = 'v0.14';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -668,13 +675,32 @@ function grayOf(px){
   for (let k = 0; k < g.length; k++) g[k] /= n[k] || 1;
   return g;
 }
+// g ≈ a × fond + b, par moindres carrés en deux passes (la 2e sans les cases très différentes : la fiole elle-même)
+function gainFit(bg, g){
+  let idx = [...bg.keys()], a = 1, b = 0;
+  for (let pass = 0; pass < 2; pass++){
+    let sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
+    for (const i of idx){ sx += bg[i]; sy += g[i]; sxx += bg[i] * bg[i]; sxy += bg[i] * g[i]; n++; }
+    if (n < 4) break;
+    const den = n * sxx - sx * sx; a = den ? Math.min(2, Math.max(.5, (n * sxy - sx * sy) / den)) : 1; b = (sy - a * sx) / n;
+    const res = bg.map((x, i) => Math.abs(g[i] - (a * x + b))), med = [...res].sort((p, q) => p - q)[res.length >> 1];
+    idx = idx.filter(i => res[i] <= Math.max(8, 2.5 * med));
+  }
+  return { a, b };
+}
 function detect(g){ // renvoie true/false une fois l'état stable (6 images de suite)
   if (!det.bg || det.bgFrames < 3){ // fond : moyenne des premières images après « Run scan »
     if (!det.bg || det.bg.length !== g.length){ det.bg = g; det.bgFrames = 1; }
     else { for (let i = 0; i < g.length; i++) det.bg[i] = (det.bg[i] * det.bgFrames + g[i]) / (det.bgFrames + 1); det.bgFrames++; }
     return det.occ;
   }
-  let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - det.bg[i]) > 18) n++;
+  // Comparaison au fond APRÈS correction de la luminosité générale (gain et décalage ajustés sur les cases qui
+  // ressemblent au fond). L'exposition automatique se réajuste quand une fiole sombre remplit la fenêtre puis s'en va :
+  // le socle vide paraissait alors plus clair ou plus sombre que le fond mémorisé, et l'app croyait qu'il restait une
+  // fiole (il fallait en poser une puis la retirer). Vidéo du socle, exposition simulée ×1,35 + 10 ou ×0,7 : socle vide
+  // vu à 60–100 % « différent » sans correction, 0–3 % avec ; fiole présente : 61–80 %.
+  const { a, b } = gainFit(det.bg, g);
+  let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - (a * det.bg[i] + b)) > 18) n++;
   const frac = n / g.length, thr = prefs.sens / 100;
   const raw = det.occ ? frac > thr * .4 : frac > thr;      // hystérésis
   if (!det.occ && frac < thr * .3) for (let i = 0; i < g.length; i++) det.bg[i] += (g[i] - det.bg[i]) * .02; // le fond suit la lumière ambiante
@@ -688,7 +714,10 @@ function chooseBand(m){
   const def = Math.min(W, Math.round(DEFAULT_ASPECT * H)) & ~1;
   let x0 = (W - def) >> 1, w = def;
   if (m){
-    const l = Math.max(0, m.xl, Math.round(m.xc - BAND_R * m.R / 2)), r = Math.min(W, m.xr, Math.round(m.xc + BAND_R * m.R / 2));
+    // rayon inconnu : 70 % centraux de la zone qui défile (jamais les montants immobiles du socle, sur lesquels le
+    // suivi restait bloqué : vidéo du socle v2, fiole 2)
+    const half = m.R ? BAND_R * m.R / 2 : .35 * (m.xr - m.xl);
+    const l = Math.max(0, m.xl, Math.round(m.xc - half)), r = Math.min(W, m.xr, Math.round(m.xc + half));
     if (r - l >= 32){ x0 = l; w = (r - l) & ~1; }
   }
   return { x0, w };
@@ -709,12 +738,17 @@ function drawBand(){
 function scanFrame(px){
   if (probe){
     if (!probe.push(px)){ if (probe.frames % 10 === 0) setStatus(...t('measure')); return; }
-    const m = probe.result(); probe = null;
+    const m = probe.result();
+    if (m && !m.R && probe.canFit && (probe.tries || 0) < 3){ probe.again(); return; }   // rayon pas ajusté : on remesure
+    probe = null;
     band = chooseBand(m); drawBand();
     engine = new ScanEngine(band.w, H);
     // circonférence attendue : 2πR, sous-estimée de 10 à 20 % par la perspective ; on écarte les tours plus courts
     // que 0,7 × cette valeur (vidéo de test : un faux tour aux 2/3 de la vraie circonférence sinon)
-    if (m){ engine.expectP = 2 * Math.PI * m.R; engine.minP = Math.max(engine.minP, .7 * engine.expectP); }
+    if (m && m.R){ engine.expectP = 2 * Math.PI * m.R; engine.minP = Math.max(engine.minP, .7 * engine.expectP); }
+    // la zone qui défile n'est pas plus large que la fiole : un tour fait au moins π × sa largeur (marge de 10 %).
+    // Sans rayon, c'est la seule borne : fiole 2 de la vidéo du socle v2, faux tour à 180 px pour ~456.
+    if (m) engine.minP = Math.max(engine.minP, .9 * Math.PI * (m.xr - m.xl));
     return;
   }
   if (!engine) return;

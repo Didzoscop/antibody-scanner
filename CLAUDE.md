@@ -73,6 +73,20 @@ Tester l'app sur une vidéo sans caméra :
 (le ROI est en fractions de l'image et correspond à la vidéo de test de l'utilisateur). Avec une vidéo,
 l'app avance image par image par `seeked`, ce qui marche même dans un onglet masqué, mais lentement.
 
+## Détection du socle (index.html, `detect` + `gainFit`)
+
+Grille de 12 × N cases grises comparée au fond mémorisé (socle vide), **après correction de la luminosité générale**
+(gain et décalage ajustés par moindres carrés sur les cases qui ressemblent au fond) (v0.14). Sans cette correction,
+l'exposition automatique, qui se réajuste quand une fiole sombre remplit la fenêtre puis s'en va, faisait voir le socle
+vide comme occupé (l'utilisateur devait poser puis retirer une fiole). Vidéo du socle v2, exposition simulée
+×1,35 + 10 ou ×0,7 : socle vide vu à 60–100 % « différent » sans correction, 0–3 % avec ; fiole présente : 61–80 %.
+
+## iPhone
+
+Safari grossit le texte en paysage sans `-webkit-text-size-adjust:100%` : la carte d'accueil débordait et il fallait
+faire défiler pour trouver « Start scan » (v0.14). Les panneaux fermés sont aussi `visibility:hidden`, et la page
+`overflow:hidden` sur html et body.
+
 ## Algorithme (engine.js)
 
 0. **Bande utilisée (v0.12, `RadiusProbe` + `chooseBand` dans index.html)** : l'app lit tout le cadre (au plus
@@ -91,6 +105,14 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    - Vidéo de l'utilisateur dans le socle (`test/local/socle_2fioles.mp4`, 1080p 30 i/s, pas dans le dépôt : 88 Mo, gardée sur le Mac de l’utilisateur ; `test/local/` est ignoré par git) :
      R mesuré 82–98 pour ~90–95 réels. Les à-coups du doigt vont jusqu'à 19 px/image : recherche portée à ±24 px.
      La mesure repart de zéro tant que la fiole bouge verticalement (on l'enfonce dans le socle).
+   - **v0.14 (vidéo du socle v2, 4K, 3 fioles, `test/local/socle_v2.mp4`, roi 0.4453,0.1157,0.0677,0.3704)** :
+     référence robuste (2e plus grande vitesse : une sous-bande au bord du montant faussait tout), sous-bandes jusqu'au
+     bord du cadre (coût moyen sur les colonnes valides), nouvelle mesure jusqu'à 3 fois si le rayon n'est pas ajusté
+     (fiole encore en train d'être posée) quand le cadre a au moins 7 sous-bandes. Rayon pas ajusté : 70 % centraux de
+     la zone qui défile (la bande par défaut prenait le montant immobile et le suivi restait bloqué). Toujours
+     `minP` ≥ 0,9 × π × largeur de la zone qui défile (faux tour à 180 pour ~456 sinon). Si le candidat est plus court
+     que 0,85 × 2πR, la vérification attend 1,4 × 2πR de panorama (faux tour à 319 validé à 0,85 sinon).
+     Résultats : socle v2 451 / 443 / 447, étiquettes complètes ; ancien socle 589 / 565 ; vidéo de test 458 (Stop).
    - Circonférence attendue 2πR : sert à la jauge avant le tour, et `minP` = 0,7 × 2πR écarte les faux tours
      (sinon, faux tour aux 2/3 sur la vidéo de test). Si le profil est plat (cadre plus étroit que la moitié de la
      fiole), pas de mesure : bande centrale de 0,25 × la hauteur, comme avant.
@@ -225,6 +247,9 @@ l'app avance image par image par `seeked`, ce qui marche même dans un onglet ma
    - **Netteté par image (v0.13)** : une colonne est nette si sa zone est nette OU si l'image entière l'est
      (Q de l'image ≥ 0,7 refQ). Fiole BioLegend : un trait horizontal donnait Q local 0,1 à 0,7 dans les deux tours,
      et le scan ne finissait jamais. Mouvement vertical toléré : 5 px par image (au lieu de 3).
+   - **Vue dans deux tours (v0.14)** : une colonne jamais nette localement mais vue dans au moins deux tours par des
+     images à ≥ 0,55 × la référence compte comme nette (c'est le contenu : le flou ne se répète pas au même endroit).
+     Socle v2, fiole 1 : 8 colonnes à Q 0,2–0,9 dans trois tours bloquaient le scan à 97 %.
    Le panneau affiche aussi la cadence de traitement (images/s), utile pour diagnostiquer un téléphone lent.
 6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
    sombre sur presque toute la hauteur (médiane de l'obscurité entre 5 et 95 % de la hauteur, avec un

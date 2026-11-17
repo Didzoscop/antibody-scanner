@@ -188,7 +188,11 @@ class ScanEngine{
   // meilleur, on prend l'autre s'il est nettement meilleur, sinon on attend un peu plus de panorama.
   verify(){
     const ext = this.umax - this.umin + 1;
-    if (ext < 1.5 * this.period) return;
+    // candidat nettement plus court que la circonférence attendue (rayon mesuré) : on attend que le panorama soit
+    // assez long pour juger aussi la circonférence attendue. Fiole 3 de la vidéo du socle v2 : faux tour à 319 pour
+    // ~455 attendus, validé à 0,85 alors que le vrai n'avait que 27 colonnes de recouvrement.
+    const need = Math.max(1.5 * this.period, this.expectP && this.period < .85 * this.expectP ? 1.4 * this.expectP : 0);
+    if (ext < need) return;
     const pg = this.periodogram(); if (!pg) return;
     this.trace.push({ frame: this.frames, c: +pg.c.toFixed(3), second: -1, P: pg.P, verify: this.period });
     if (this.trace.length > 50) this.trace.shift();
@@ -340,10 +344,17 @@ class ScanEngine{
   // Couverture du tour par des captures nettes : chaque colonne est repliée modulo la circonférence.
   // blurry : part du tour vue, mais seulement floue (pour dire à l'utilisateur de tourner plus lentement)
   coverage(){
-    const P = this.period, ok = new Uint8Array(P), seen = new Uint8Array(P);
-    for (let u = this.umin; u <= this.umax; u++){ if (!this.filled[u]) continue; const k = ((u - OFF) % P + P) % P; seen[k] = 1; if (this.good(u)) ok[k] = 1; }
+    const P = this.period, ok = new Uint8Array(P), seen = new Uint8Array(P), qmax = new Float32Array(P);
+    for (let u = this.umin; u <= this.umax; u++){
+      if (!this.filled[u]) continue; const k = ((u - OFF) % P + P) % P;
+      seen[k]++; if (this.good(u)) ok[k] = 1; else if (this.steady[u]) qmax[k] = Math.max(qmax[k], this.qfcol[u]);
+    }
+    // Vue dans deux tours au moins, par des images correctes, et jamais nette localement : c'est le contenu (jonction de
+    // l'étiquette, trait), pas du flou, qui ne se répète pas au même endroit à chaque tour. Vidéo du socle v2 : 8 colonnes
+    // à Q local 0,2–0,9 dans trois tours, images à 0,5–0,6 × la référence ; le scan ne finissait jamais.
+    for (let k = 0; k < P; k++) if (!ok[k] && seen[k] >= 2 && qmax[k] >= .55 * this.refQ) ok[k] = 1;
     let n = 0, ns = 0, gap = 0, run = 0;
-    for (let k = 0; k < P; k++){ n += ok[k]; ns += seen[k]; }
+    for (let k = 0; k < P; k++){ n += ok[k]; ns += seen[k] ? 1 : 0; }
     if (n < P) for (let i = 0; i < 2 * P; i++){ if (ok[i % P]) run = 0; else if (++run > gap) gap = run; }
     return { coverage: n / P, gap: Math.min(gap, P), blurry: (ns - n) / P };
   }
@@ -497,7 +508,7 @@ class ScanEngine{
 class RadiusProbe{
   constructor(W, H){
     this.W = W; this.H2 = H >> 1; this.SB = 16; this.c = [];
-    for (let x = this.SB / 2 + 24; x <= W - this.SB / 2 - 24; x += 8) this.c.push(x);   // marge = recherche (±24)
+    for (let x = this.SB / 2 + 4; x <= W - this.SB / 2 - 4; x += 8) this.c.push(x);
     this.tot = new Float64Array(this.c.length); this.moved = 0; this.frames = 0; this.prev = null;
   }
   grad(px){
@@ -515,8 +526,11 @@ class RadiusProbe{
     for (let dx = -S; dx <= S; dx++){
       let m = Infinity;
       for (let dy = -D; dy <= D; dy++){
-        let s = 0;
-        for (let y = 6; y < H2 - 6; y += 4){ const rb = y * W, ra = (y - dy) * W - dx; for (let x = c - SB / 2; x < c + SB / 2; x++){ const d = b[rb + x] - a[ra + x]; s += d * d; } }
+        // colonnes dont le correspondant (x − dx) reste dans le cadre ; coût moyen, pour comparer des dx différents
+        let s = 0, n = 0; const x0 = Math.max(c - SB / 2, dx + 1), x1 = Math.min(c + SB / 2, W - 1 + dx);
+        if (x1 - x0 < SB / 2) continue;
+        for (let y = 6; y < H2 - 6; y += 4){ const rb = y * W, ra = (y - dy) * W - dx; for (let x = x0; x < x1; x++){ const d = b[rb + x] - a[ra + x]; s += d * d; } n += x1 - x0; }
+        s /= n;
         if (s < m){ m = s; if (m < best) bdy = dy; }
       }
       cost[dx + S] = m; if (m < best){ best = m; bx = dx; }
@@ -526,6 +540,10 @@ class RadiusProbe{
     this.dy = bdy;
     return bx + sub;
   }
+  // nouvelle mesure (la précédente n'a pas permis d'ajuster le rayon : fiole encore en train d'être posée, doigts…)
+  // assez de sous-bandes pour ajuster un rayon ? (cadre étroit : non, inutile de remesurer)
+  get canFit(){ return this.c.length >= 7; }
+  again(){ this.tot.fill(0); this.moved = 0; this.frames = 0; this.tries = (this.tries || 0) + 1; }
   // renvoie true quand la mesure est faite (assez de rotation, ou trop longtemps sans)
   push(px){
     const fx = this.grad(px); this.frames++;
@@ -543,11 +561,18 @@ class RadiusProbe{
     this.prev = fx;
     return this.moved >= 50 || this.frames >= 150;
   }
-  // { R, xc } en pixels du cadre, ou null si le profil ne permet pas de conclure (cadre entièrement sur la fiole)
+  // { R, xc, xl, xr } en pixels du cadre ; R = 0 si le rayon n'a pas pu être ajusté (on connaît alors seulement la
+  // zone qui défile, [xl, xr]) ; null s'il n'y a pas eu assez de rotation.
   result(){
-    const mx = Math.max(...this.tot); if (!(mx > 0) || this.moved < 25) return null;
-    const pts = this.c.map((x, j) => [x, this.tot[j] / mx]).filter(p => p[1] > .5);
-    if (pts.length < 5) return null;
+    // référence robuste : 2e plus grande vitesse, pas la plus grande. Vidéo du socle v2 : une seule sous-bande au bord
+    // du montant donnait une valeur aberrante, tout le profil était divisé par elle et la mesure échouait.
+    const sorted = [...this.tot].sort((p, q) => q - p), ref = sorted[Math.min(1, sorted.length - 1)];
+    if (!(ref > 0) || this.moved < 25) return null;
+    const all = this.c.map((x, j) => [x, this.tot[j] / ref]);
+    const pts = all.filter(p => p[1] > .5 && p[1] < 1.25);
+    if (pts.length < 3) return null;
+    const xl = pts[0][0] - this.SB / 2, xr = pts[pts.length - 1][0] + this.SB / 2, zone = { R: 0, xc: (xl + xr) / 2, xl, xr };
+    if (pts.length < 5) return zone;
     const W = this.W; let best = [Infinity];
     for (let xc = pts[0][0]; xc <= pts[pts.length - 1][0]; xc += 1) for (let R = 8; R <= 2 * W; R += 1){
       let e = 0, sv = 0, sp = 0;
@@ -557,10 +582,10 @@ class RadiusProbe{
       if (e < best[0]) best = [e, xc, R];
     }
     const [e, xc, R] = best;
-    // profil plat (cadre plus étroit que la moitié de la fiole) : on ne peut rien dire du rayon
-    if (e / pts.length > .004 || R >= 1.5 * W) return null;
-    // zone où l'étiquette défile vraiment (fenêtre du socle) : la bande ne doit pas en sortir
-    return { R, xc, xl: pts[0][0] - this.SB / 2, xr: pts[pts.length - 1][0] + this.SB / 2 };
+    // profil plat (cadre plus étroit que la moitié de la fiole) ou bruité : on ne peut rien dire du rayon, mais la
+    // bande restera dans la zone qui défile (fenêtre du socle, sans ses montants immobiles)
+    if (e / pts.length > .004 || R >= 1.5 * W) return zone;
+    return { R, xc, xl, xr };
   }
 }
 window.ScanEngine = ScanEngine; window.RadiusProbe = RadiusProbe;
