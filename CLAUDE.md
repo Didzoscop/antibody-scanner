@@ -101,6 +101,23 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
 - Piste écartée pour l'instant (choix de l'utilisateur) : lecture par Claude (API payante, images envoyées) ;
   contrôle de cohérence catalogue / marqueur / fluorochrome : plus tard.
 
+## Registre, export, sauvegarde (v0.19)
+
+- Liste des scans (vignette, marqueur · fluorochrome, Cat · Lot · fabricant, date, badge vérifié / à vérifier /
+  incomplet), avancée en tête (« N scans · C vérifiés · T à vérifier »), recherche dans les champs. Accessible aussi
+  pendant le scan (bouton Registre du panneau) ; le panneau montre le dernier scan lu (un appui ouvre sa fiche).
+- Fiche : chaque modification est enregistrée 0,4 s après la frappe (et à la fermeture) ; « Vérifié ✓ » marque le scan
+  vérifié (`checked`) ; « Rescanner » : le prochain scan terminé remplace celui-ci (`rescanId`), puis il est relu.
+- Export CSV (UTF-8 avec BOM pour Excel, virgules, tout entre guillemets) : id, date, marker, fluorochrome,
+  manufacturer, catalogue, lot, clone, expiry, gtin, code_2d, checked, incomplete_scan. Partage natif (Fichiers,
+  e-mail) si possible, sinon téléchargement.
+- Sauvegarde : un .json avec champs + images en JPEG 0,85 (~60 Ko par scan) ; « Restaurer » ajoute les scans absents
+  (même `date` = déjà là). `navigator.storage.persist()` demandé au démarrage ; la note dit si c'est accordé.
+- Sûreté : chaque scan est écrit dans IndexedDB dès la fin de la fiole. Au démarrage, les scans jamais lus (app fermée
+  pendant la lecture) sont relus (`readPending`). Un plantage ne perd que la fiole en cours.
+- Aperçu caméra carré, centré (`object-fit: cover`, `videoBox` en mode cover) : le panneau récupère la place ; le cadre
+  est gardé dans la partie visible (`clampRoi`).
+
 ## Détection du socle (index.html, `detect` + `gainFit`)
 
 Grille de 12 × N cases grises comparée au fond mémorisé (socle vide), **après correction de la luminosité générale**
