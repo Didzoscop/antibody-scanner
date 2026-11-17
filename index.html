@@ -304,7 +304,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.16';
+const VERSION = 'v0.17';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -783,20 +783,24 @@ function detect(g){ // renvoie true/false une fois l'état stable (6 images de s
 }
 
 /* Code 2D lu en direct sur les images brutes, en pleine résolution, pendant le scan : sur l'étiquette à plat il est
-   souvent coupé (jonction) ou déformé. Une image sur trois, sans bloquer le scan, jusqu'à ce qu'un code soit lu. */
-let liveCodes = [], codeBusy = false, codeTick = 0, cc = null;
-async function liveCode(){
-  if (codeBusy || liveCodes.length || !window.LabelReader || !crop || ++codeTick % 3) return;
+   souvent coupé (jonction) ou déformé. La lecture se fait dans un fil à part (code-worker.js) : sur le fil principal
+   (v0.16), elle ralentissait le traitement des images sur téléphone et le suivi décrochait. Une seule lecture à la fois,
+   pas plus d'une image sur quatre, jusqu'à ce qu'un code soit lu. Sans Worker ni OffscreenCanvas : pas de lecture en
+   direct (le code sera cherché sur l'étiquette à plat). */
+let liveCodes = [], codeBusy = false, codeTick = 0, codeWorker = null;
+const CAN_LIVE_CODE = typeof Worker === 'function' && typeof OffscreenCanvas === 'function' && typeof createImageBitmap === 'function';
+function liveCode(){
+  if (!CAN_LIVE_CODE || codeBusy || liveCodes.length || !crop || ++codeTick % 4) return;
+  if (!codeWorker){
+    try { codeWorker = new Worker('code-worker.js'); } catch (e){ return; }
+    codeWorker.onmessage = e => { codeBusy = false; if (e.data && e.data.text && state === 'scan') liveCodes.push({ text: e.data.text, format: e.data.format }); };
+    codeWorker.onerror = () => { codeBusy = false; };
+  }
   codeBusy = true;
-  try {
-    const k = Math.min(1, 1000 / crop.h), w = Math.round(crop.w * k), h = Math.round(crop.h * k);
-    if (!cc){ cc = document.createElement('canvas'); }
-    if (cc.width !== w || cc.height !== h){ cc.width = w; cc.height = h; }
-    const x = cc.getContext('2d', { willReadFrequently: true });
-    x.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
-    const r = await LabelReader.scanCode(x.getImageData(0, 0, w, h));
-    if (r && engine !== undefined) liveCodes.push(r);
-  } catch (e){} finally { codeBusy = false; }
+  const k = Math.min(1, 900 / crop.h);
+  createImageBitmap(video, crop.x, crop.y, crop.w, crop.h, { resizeWidth: Math.round(crop.w * k), resizeHeight: Math.round(crop.h * k) })
+    .then(bmp => codeWorker.postMessage({ bitmap: bmp }, [bmp]))
+    .catch(() => { codeBusy = false; });
 }
 // Le scan commence par mesurer la fiole (RadiusProbe), puis le moteur ne reçoit que la bande choisie
 function startEngine(){ liveCodes = []; codeTick = 0; engine = null; probe = new RadiusProbe(W, H); band = null; drawBand(); setState('scan'); setStatus(...t('measure')); drawProgress(null); }

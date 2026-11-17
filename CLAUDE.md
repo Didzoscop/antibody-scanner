@@ -90,6 +90,11 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
   code est souvent coupé par la jonction (fiole BioLegend CD183 : DataMatrix coupé en deux, lot illisible). Codes
   BioLegend : « 126528   B350197 » = catalogue + lot (`parseCode`). Vidéo `test/local/biolegend_cd183.mp4`
   (roi 0.4427,0.2083,0.0755,0.3704) : code lu sur 7 images sur 179 ; tous les champs justes.
+- **Dans un worker (v0.17, `code-worker.js`)** : en v0.16 la lecture en direct se faisait sur le fil principal ; copier
+  la zone d'une image 4K (`drawImage(video)` + `getImageData`) coûtait 19 ms sur Mac à chaque essai, bien plus sur
+  téléphone, et l'utilisateur a eu des étiquettes très mal assemblées (suivi décroché faute d'images traitées).
+  Maintenant `createImageBitmap(video, zone, taille ≤ 900 px)` (0,1 ms) est transféré au worker, une image sur quatre,
+  une lecture à la fois. Ne jamais remettre de travail lourd sur le fil principal pendant le scan.
 - « Isotype: Armenian Hamster IgG » n'est pas un contrôle isotypique (seul « Isotype control » l'est). Valeurs en anglais.
 - Champs dans la fiche du scan (registre), modifiables, « Relire » relance la lecture sur l'image enregistrée.
   Bord vert = valeur lue dans le code 2D. Les bibliothèques viennent de jsDelivr : il faut du réseau à la 1re lecture.
