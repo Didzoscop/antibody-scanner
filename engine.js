@@ -191,7 +191,10 @@ class ScanEngine{
     // candidat nettement plus court que la circonférence attendue (rayon mesuré) : on attend que le panorama soit
     // assez long pour juger aussi la circonférence attendue. Fiole 3 de la vidéo du socle v2 : faux tour à 319 pour
     // ~455 attendus, validé à 0,85 alors que le vrai n'avait que 27 colonnes de recouvrement.
-    const need = Math.max(1.5 * this.period, this.expectP && this.period < .85 * this.expectP ? 1.4 * this.expectP : 0);
+    // Sans rayon mesuré, rien ne dit qu'un candidat est trop court : on attend 1,8 tour du candidat, assez pour juger
+    // aussi une circonférence 1,35 fois plus grande. Fiole BioLegend CD183 scannée sur le téléphone : étiquette coupée,
+    // tour validé aux 3/4 du vrai.
+    const need = Math.max(this.expectP ? 1.5 * this.period : 1.8 * this.period, this.expectP && this.period < .85 * this.expectP ? 1.4 * this.expectP : 0);
     if (ext < need) return;
     const pg = this.periodogram(); if (!pg) return;
     this.trace.push({ frame: this.frames, c: +pg.c.toFixed(3), second: -1, P: pg.P, verify: this.period });

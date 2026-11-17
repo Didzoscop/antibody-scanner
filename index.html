@@ -304,7 +304,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.15';
+const VERSION = 'v0.16';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -454,12 +454,14 @@ async function renderRegister(){
    Les champs sont enregistrés avec le scan et restent modifiables dans sa fiche. */
 const FIELDS = ['marker', 'fluor', 'maker', 'cat', 'lot', 'clone', 'exp'];
 let viewing = null, readingIds = new Set();
-async function readInto(id, canvas){
+async function readInto(id, canvas, codes = []){
   if (!window.LabelReader) return;
   readingIds.add(id); if (viewing && viewing.id === id) fillFields(viewing);
   try {
     if (!canvas){ const r = await DB.get(id); canvas = await blobCanvas(r.blob); }
-    const res = await LabelReader.readLabel(canvas);
+    // « Relire » : les codes déjà lus pendant le scan sont gardés
+    if (!codes.length){ const r = await DB.get(id); codes = (r.code || []).map(text => ({ text })); }
+    const res = await LabelReader.readLabel(canvas, codes);
     const rec = await DB.get(id); if (!rec) return;
     rec.fields = res.fields; rec.code = res.code.map(c => c.text); rec.ocr = res.text; rec.edited = false;
     await DB.put(rec); renderRegister();
@@ -478,7 +480,7 @@ function blobCanvas(blob){
 function fillFields(r){
   const f = r.fields || {}, form = $('fields'), busy = readingIds.has(r.id), fromCode = new Set();
   // champs confirmés par le code 2D (bord vert)
-  if (r.code && r.code.length){ const g = LabelReader.parseGS1(r.code.join('')); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); }
+  for (const c of r.code || []){ const g = LabelReader.parseCode(c); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); if (g.ref && /^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
   for (const k of FIELDS){ const el = form.elements[k]; el.value = f[k] || ''; el.classList.toggle('code', fromCode.has(k)); el.title = fromCode.has(k) ? t('fromCode') : ''; }
   $('fieldsNote').textContent = busy ? t('reading') : r.fields && !r.edited ? t('checkFields') : '';
   $('btnReread').disabled = busy;
@@ -780,8 +782,24 @@ function detect(g){ // renvoie true/false une fois l'état stable (6 images de s
   return det.occ;
 }
 
+/* Code 2D lu en direct sur les images brutes, en pleine résolution, pendant le scan : sur l'étiquette à plat il est
+   souvent coupé (jonction) ou déformé. Une image sur trois, sans bloquer le scan, jusqu'à ce qu'un code soit lu. */
+let liveCodes = [], codeBusy = false, codeTick = 0, cc = null;
+async function liveCode(){
+  if (codeBusy || liveCodes.length || !window.LabelReader || !crop || ++codeTick % 3) return;
+  codeBusy = true;
+  try {
+    const k = Math.min(1, 1000 / crop.h), w = Math.round(crop.w * k), h = Math.round(crop.h * k);
+    if (!cc){ cc = document.createElement('canvas'); }
+    if (cc.width !== w || cc.height !== h){ cc.width = w; cc.height = h; }
+    const x = cc.getContext('2d', { willReadFrequently: true });
+    x.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
+    const r = await LabelReader.scanCode(x.getImageData(0, 0, w, h));
+    if (r && engine !== undefined) liveCodes.push(r);
+  } catch (e){} finally { codeBusy = false; }
+}
 // Le scan commence par mesurer la fiole (RadiusProbe), puis le moteur ne reçoit que la bande choisie
-function startEngine(){ engine = null; probe = new RadiusProbe(W, H); band = null; drawBand(); setState('scan'); setStatus(...t('measure')); drawProgress(null); }
+function startEngine(){ liveCodes = []; codeTick = 0; engine = null; probe = new RadiusProbe(W, H); band = null; drawBand(); setState('scan'); setStatus(...t('measure')); drawProgress(null); }
 function chooseBand(m){
   const def = Math.min(W, Math.round(DEFAULT_ASPECT * H)) & ~1;
   let x0 = (W - def) >> 1, w = def;
@@ -808,6 +826,7 @@ function drawBand(){
   el.classList.remove('hidden');
 }
 function scanFrame(px){
+  liveCode();
   if (probe){
     if (!probe.push(px)){ if (probe.frames % 10 === 0) setStatus(...t('measure')); return; }
     const m = probe.result();
@@ -861,7 +880,7 @@ async function finish(){
   setGauge(100);
   navigator.vibrate && navigator.vibrate([60, 60, 120]);
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-  try { const id = await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); readInto(id, canvas); }
+  try { const id = await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); readInto(id, canvas, liveCodes.slice()); }
   catch (e){ toast(t('saveFail') + e.message); }
   toast(junction ? t('saved') : t('savedNoJ'));
   if ((source.kind === 'file' && !FILE_DETECT) || !prefs.autoNext){ setState('zone', t('again')); return; }

@@ -49,6 +49,23 @@ async function readCode(canvas){
   }
   return results;
 }
+// Code lu sur une image brute du scan (pleine résolution, pendant la rotation). Sur l'étiquette à plat, le code est
+// souvent coupé par la jonction ou déformé par l'assemblage ; sur une image brute il est entier. Vidéo BioLegend CD183 :
+// lu sur 7 images sur 179, la 1re 2,3 s après la pose, ~4 ms par image. Renvoie { text, format } ou null.
+// Pas d'attente : tant que la bibliothèque se charge, on renvoie null (le scan ne doit pas ralentir).
+let zxingReady = false;
+async function scanCode(imageData){
+  if (!zxingReady){ loadScript(ZXING).then(() => { zxingReady = true; }).catch(() => {}); return null; }
+  const r = await window.ZXingWASM.readBarcodes(imageData, { tryHarder: true, maxNumberOfSymbols: 1, textMode: 'HRI', formats: ['DataMatrix', 'QRCode', 'Aztec', 'PDF417'] });
+  return r.length && r[0].text && r[0].isValid !== false ? { text: r[0].text, format: r[0].format } : null;
+}
+// Contenu d'un code : GS1 (BD, Invitrogen…) ou « catalogue   lot » (BioLegend : « 126528   B350197 »)
+function parseCode(text){
+  if (/\(\d{2,4}\)/.test(text)) return parseGS1(text);
+  const tok = text.trim().split(/\s+/);
+  if (tok.length === 2 && /^\d{4,8}$/.test(tok[0]) && /^[A-Z0-9-]{4,}$/i.test(tok[1])) return { ref: tok[0], lot: tok[1] };
+  return {};
+}
 // éléments GS1 : « (01)00382906127990(10)3079093(17)251031 »
 const GS1 = { '01': 'gtin', '10': 'lot', '17': 'exp', '11': 'made', '21': 'serial', '240': 'ref', '241': 'ref' };
 function parseGS1(text){
@@ -89,7 +106,7 @@ function vote(list){
 
 const MAKERS = [
   [/\bBD\b|Pharmingen|BD\s*Horizon|Becton|bdbiosciences|OptiBuild/i, 'BD Biosciences'],
-  [/Bio\s*Legend/i, 'BioLegend'],
+  [/Bio\s*Leg(end)?/i, 'BioLegend'],   // souvent coupé (« BioLeg ») sur le bord de l'image
   [/eBioscience/i, 'Invitrogen (eBioscience)'],
   [/Invitrogen|Thermo\s*Fisher/i, 'Invitrogen (Thermo Fisher)'],
   [/R\s*&\s*D\s*Systems|\bR&D\b|rndsystems/i, 'R&D Systems'],
@@ -109,7 +126,7 @@ const FLUOR = [
   [/PE[\s\/-]*Cy\s?7/i, () => 'PE-Cy7'], [/PE[\s\/-]*Cy\s?5\.5/i, () => 'PE-Cy5.5'], [/PE[\s\/-]*Cy\s?5/i, () => 'PE-Cy5'], [/PE[\s\/-]*CF\s?594/i, () => 'PE-CF594'],
   [/PE[\s\/-]*Dazzle\s*(\d{3})/i, m => 'PE-Dazzle ' + m[1]], [/PE[\s\/-]*Fire\s*(\d{3})/i, m => 'PE-Fire ' + m[1]], [/PE[\s\/-]*Texas\s*Red/i, () => 'PE-Texas Red'],
   [/Pacific\s*(Blue|Orange)/i, m => 'Pacific ' + m[1]], [/\bFITC\b/i, () => 'FITC'], [/\bAPC\b/i, () => 'APC'], [/\bPE\b/, () => 'PE'],
-  [/\bBiotin/i, () => 'Biotin'], [/Purified/i, () => 'Purifié (sans fluorochrome)'], [/\bDAPI\b/i, () => 'DAPI'], [/7-?AAD/i, () => '7-AAD']
+  [/\bBiotin/i, () => 'Biotin'], [/Purified/i, () => 'Purified (unconjugated)'], [/\bDAPI\b/i, () => 'DAPI'], [/7-?AAD/i, () => '7-AAD']
 ];
 
 // numéros qui existent vraiment : un numéro inconnu est ramené au plus proche en tenant compte des confusions de
@@ -161,24 +178,27 @@ function parseText(raw){
     else if (v && /\b(and|&)$|[\/,]$/.test(clean(m[1])) && lines[i + 1]) v = clean(m[1]).replace(/[\s,]+$/, '') + ' ' + marker(lines[i + 1]);   // « Ly-6G and » + « Ly-6C »
     f.marker = v.trim();
   }
-  if (!f.marker && /isotype/i.test(one)) f.marker = 'Contrôle isotypique';
+  // « Isotype: Armenian Hamster IgG » décrit l'isotype de l'anticorps, ce n'est pas un contrôle isotypique
+  if (!f.marker && /isotype\s*(control|ctrl)/i.test(one)) f.marker = 'Isotype control';
   if (!f.marker && (m = one.match(/\bCD\s?\d{1,3}[a-z]?\b/i))) f.marker = m[0].replace(/\s/, '').toUpperCase();
   return f;
 }
 
 // Lit l'étiquette. onStep(texte) : avancement, pour l'interface. Renvoie { fields, code, text, errors }.
-async function readLabel(canvas, onStep = () => {}){
+// extra : codes déjà lus sur les images brutes pendant le scan (prioritaires)
+async function readLabel(canvas, extra = [], onStep = () => {}){
   const errors = [], fields = { marker: '', fluor: '', maker: '', cat: '', lot: '', clone: '', exp: '' };
-  let code = [], texts = [];
-  try { onStep('code'); code = await readCode(canvas); } catch (e){ errors.push(e.message); }
+  let code = [...extra], texts = [];
+  try { onStep('code'); for (const c of await readCode(canvas)) if (!code.some(o => o.text === c.text)) code.push(c); } catch (e){ errors.push(e.message); }
   try { onStep('text'); texts = await ocr(canvas); } catch (e){ errors.push(e.message); }
   const t = texts.length ? vote(texts.map(parseText)) : {}, text = texts[1] || texts[0] || '';
   for (const k in fields) if (t[k]) fields[k] = t[k];
   for (const c of code){
-    const g = parseGS1(c.text);
+    const g = parseCode(c.text);
     if (g.lot) fields.lot = g.lot;
     if (g.exp) fields.exp = g.exp;
-    if (g.ref && !fields.cat) fields.cat = g.ref;
+    // une réf. de code qui ressemble à un n° de catalogue (BioLegend) l'emporte ; (240) de BD (« 0303 ») ne sert qu'à défaut
+    if (g.ref && (!fields.cat || /^\d{5,8}$/.test(g.ref))) fields.cat = g.ref;
     if (g.gtin) fields.gtin = g.gtin;
   }
   // Certains fabricants (BD) mettent le n° de catalogue dans le GTIN du code : 00382906127990 → 612799. Si le catalogue
@@ -194,5 +214,5 @@ async function readLabel(canvas, onStep = () => {}){
   return { fields, code, text, errors };
 }
 
-window.LabelReader = { readLabel, parseText, parseGS1, prepare };
+window.LabelReader = { readLabel, parseText, parseGS1, parseCode, scanCode, prepare };
 })();

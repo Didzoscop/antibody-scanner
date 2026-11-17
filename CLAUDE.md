@@ -85,6 +85,12 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
   contre ceux qui existent (BUV305 → BUV395) ; marqueur après « Anti-Mouse/Human/… », sur la ligne ou la suivante.
 - **Mesure** (6 étiquettes : 3 du socle v2, 2 de l'ancien socle, la vidéo de test ; 7 champs) : 37/42 justes ;
   socle v2 (4K) 20/21 (clone 30-F11 lu 30-F1). Une seule taille : 33–35/42. ~1,3 s par étiquette sur PC.
+- **Code lu en direct (v0.16)** : pendant le scan, une image sur trois, la zone en pleine résolution (≤ 1000 px de
+  haut) passe dans zxing (`LabelReader.scanCode`, ~4 ms) jusqu'à ce qu'un code soit lu. Sur l'étiquette à plat le
+  code est souvent coupé par la jonction (fiole BioLegend CD183 : DataMatrix coupé en deux, lot illisible). Codes
+  BioLegend : « 126528   B350197 » = catalogue + lot (`parseCode`). Vidéo `test/local/biolegend_cd183.mp4`
+  (roi 0.4427,0.2083,0.0755,0.3704) : code lu sur 7 images sur 179 ; tous les champs justes.
+- « Isotype: Armenian Hamster IgG » n'est pas un contrôle isotypique (seul « Isotype control » l'est). Valeurs en anglais.
 - Champs dans la fiche du scan (registre), modifiables, « Relire » relance la lecture sur l'image enregistrée.
   Bord vert = valeur lue dans le code 2D. Les bibliothèques viennent de jsDelivr : il faut du réseau à la 1re lecture.
 - Piste écartée pour l'instant (choix de l'utilisateur) : lecture par Claude (API payante, images envoyées) ;
@@ -130,6 +136,8 @@ faire défiler pour trouver « Start scan » (v0.14). Les panneaux fermés sont 
      `minP` ≥ 0,9 × π × largeur de la zone qui défile (faux tour à 180 pour ~456 sinon). Si le candidat est plus court
      que 0,85 × 2πR, la vérification attend 1,4 × 2πR de panorama (faux tour à 319 validé à 0,85 sinon).
      Résultats : socle v2 451 / 443 / 447, étiquettes complètes ; ancien socle 589 / 565 ; vidéo de test 458 (Stop).
+   - **Sans rayon mesuré (v0.16)**, la vérification attend 1,8 tour du candidat (au lieu de 1,5) : sur le téléphone, la
+     fiole BioLegend CD183 est sortie coupée (tour validé aux 3/4 du vrai, lot absent).
    - Circonférence attendue 2πR : sert à la jauge avant le tour, et `minP` = 0,7 × 2πR écarte les faux tours
      (sinon, faux tour aux 2/3 sur la vidéo de test). Si le profil est plat (cadre plus étroit que la moitié de la
      fiole), pas de mesure : bande centrale de 0,25 × la hauteur, comme avant.
