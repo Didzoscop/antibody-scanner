@@ -18,7 +18,8 @@ comme une vraie app, en plein écran et utilisable hors ligne.
    La zone est mémorisée.
 3. **Run scan** : l'app mémorise le fond, puis attend qu'une fiole soit posée.
 4. Fiole détectée : le scan démarre, les flèches invitent à tourner la fiole, la barre se remplit.
-5. Scan terminé : l'étiquette est enregistrée dans le **Registre**. Retirez la fiole et posez la suivante :
+5. Scan terminé : l'étiquette est enregistrée dans le **Registre**, puis lue automatiquement (code 2D et texte) :
+   marqueur, fluorochrome, fabricant, catalogue, lot, clone, péremption, modifiables dans la fiche du scan. Retirez la fiole et posez la suivante :
    le scan suivant démarre tout seul.
 
 Sur Android, **Paramètres** propose les réglages caméra pendant un scan (« Mode sport », mise au point, lampe),

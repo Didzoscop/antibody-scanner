@@ -26,6 +26,7 @@ Cette étape n'est pas commencée : la v1 s'arrête à l'image à plat, par choi
 
 - `index.html` : l'interface (accueil, écran de scan, paramètres, registre). Publiée par GitHub Pages
   sur https://didzoscop.github.io/antibody-scanner/, mise à jour à chaque push sur `main`.
+- `reader.js` : lecture de l'étiquette à plat (code 2D + texte, voir plus bas).
 - `engine.js` : le moteur de scan (`ScanEngine`), indépendant de la caméra : il reçoit les pixels RGBA de la zone.
 - `mascot.js` : la mascotte (fiole en pixel art, grille 70 × 75 comme celle de Petri·Capture), l'animation
   de remplacement de fiole dans le socle et les flèches de rotation.
@@ -72,6 +73,22 @@ Tester l'app sur une vidéo sans caméra :
 (marche aussi en ligne : `https://didzoscop.github.io/antibody-scanner/?video=test/fiole_siglec-f.mp4&roi=…`)
 (le ROI est en fractions de l'image et correspond à la vidéo de test de l'utilisateur). Avec une vidéo,
 l'app avance image par image par `seeked`, ce qui marche même dans un onglet masqué, mais lentement.
+
+## Lecture de l'étiquette (reader.js, v0.15)
+
+Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan, sur l'étiquette à plat.
+- **Code 2D** : zxing-wasm 3.1.7 (jsDelivr, build `iife/reader`, `textMode: 'HRI'`), essayé à ×1 puis ×2. Codes GS1 :
+  (01) GTIN, (10) lot, (17) péremption AAMMJJ, (240) réf. Prioritaires sur le texte. BD met le n° de catalogue dans le
+  GTIN (00382906127990 → 612799) : un catalogue lu à 1–2 chiffres près d'un seul endroit du GTIN est corrigé.
+- **Texte** : Tesseract.js 7.0.0 (`eng`), image en gris, contraste étiré, agrandie ×2, ×3 et ×4, vote par champ.
+  Règles : Cat/REF, Lot, Clone, Exp ; fabricants et fluorochromes par listes ; numéros de fluorochromes vérifiés
+  contre ceux qui existent (BUV305 → BUV395) ; marqueur après « Anti-Mouse/Human/… », sur la ligne ou la suivante.
+- **Mesure** (6 étiquettes : 3 du socle v2, 2 de l'ancien socle, la vidéo de test ; 7 champs) : 37/42 justes ;
+  socle v2 (4K) 20/21 (clone 30-F11 lu 30-F1). Une seule taille : 33–35/42. ~1,3 s par étiquette sur PC.
+- Champs dans la fiche du scan (registre), modifiables, « Relire » relance la lecture sur l'image enregistrée.
+  Bord vert = valeur lue dans le code 2D. Les bibliothèques viennent de jsDelivr : il faut du réseau à la 1re lecture.
+- Piste écartée pour l'instant (choix de l'utilisateur) : lecture par Claude (API payante, images envoyées) ;
+  contrôle de cohérence catalogue / marqueur / fluorochrome : plus tard.
 
 ## Détection du socle (index.html, `detect` + `gainFit`)
 

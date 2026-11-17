@@ -172,7 +172,14 @@ dialog.pix::backdrop{background:rgba(26,26,26,.45)}
 dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-spacing:.06em}
 .view{display:flex;gap:1rem;align-items:flex-start}
 .view img{display:block;max-width:min(60vw,640px);max-height:calc(94vh - 5.5rem);border:var(--b) solid var(--ink)}
-.view .col{display:flex;flex-direction:column;gap:.7rem;padding:0 var(--b) var(--b) 0;min-width:9rem}
+.view .col{display:flex;flex-direction:column;gap:.7rem;padding:0 var(--b) var(--b) 0;min-width:9rem;max-width:22rem}
+.view .row{display:flex;flex-wrap:wrap;gap:.5rem}
+.fields{display:flex;flex-direction:column;gap:.35rem}
+.fields label{display:grid;grid-template-columns:7.5rem 1fr;align-items:center;gap:.5rem;font-size:.85rem}
+.fields input{min-width:0;border:2px solid var(--ink);background:var(--paper);padding:.15rem .35rem;font-size:16px;border-radius:0}   /* 16 px : sinon Safari sur iPhone zoome sur le champ */
+.fields input.code{border-color:var(--ok)}
+.fields .small{margin:0;font-size:.78rem;color:var(--muted)}
+@media (max-height:520px){.view img{max-width:min(48vw,640px)}}
 .toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);
   background:var(--ink);color:var(--paper);padding:.5rem 1rem;z-index:40;display:none;max-width:90vw;box-shadow:var(--b) var(--b) 0 var(--muted)}
 .toast.show{display:block}
@@ -272,7 +279,21 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
   <h2 id="viewTitle"></h2>
   <div class="view">
     <img id="viewImg" alt="">
-    <div class="col"><a class="btn primary" id="viewDl" download data-i18n="save"></a><button class="btn danger" id="viewDel" type="button" data-i18n="del"></button><button class="btn" id="viewClose" type="button" data-i18n="close"></button></div>
+    <div class="col">
+      <!-- champs lus sur l'étiquette (reader.js), modifiables -->
+      <form class="fields" id="fields" autocomplete="off">
+        <p class="small" id="fieldsNote"></p>
+        <label><span data-i18n="f_marker"></span><input name="marker"></label>
+        <label><span data-i18n="f_fluor"></span><input name="fluor"></label>
+        <label><span data-i18n="f_maker"></span><input name="maker"></label>
+        <label><span data-i18n="f_cat"></span><input name="cat"></label>
+        <label><span data-i18n="f_lot"></span><input name="lot"></label>
+        <label><span data-i18n="f_clone"></span><input name="clone"></label>
+        <label><span data-i18n="f_exp"></span><input name="exp"></label>
+        <div class="row"><button class="btn primary" type="submit" data-i18n="saveFields"></button><button class="btn" type="button" id="btnReread" data-i18n="reread"></button></div>
+      </form>
+      <div class="row"><a class="btn" id="viewDl" download data-i18n="save"></a><button class="btn danger" id="viewDel" type="button" data-i18n="del"></button><button class="btn" id="viewClose" type="button" data-i18n="close"></button></div>
+    </div>
   </div>
 </dialog>
 <div class="toast" id="toast" role="status"></div>
@@ -280,9 +301,10 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 
 <script src="mascot.js"></script>
 <script src="engine.js"></script>
+<script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.14';
+const VERSION = 'v0.15';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -304,6 +326,9 @@ const I18N = {
     zoneTitle: 'Scan zone', resetZone: 'Reset zone', zoneReset: 'Zone reset',
     test: 'Test', testNote: 'Replays a recorded video as if it were the camera (no holder detection).', testBtn: 'Test with a video',
     regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
+    f_marker: 'Marker', f_fluor: 'Fluorochrome', f_maker: 'Manufacturer', f_cat: 'Catalogue no.', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Expiry',
+    reading: 'Reading the label…', readFail: 'Could not read the label: ', reread: 'Read again', saveFields: 'Save fields', fieldsSaved: 'Fields saved',
+    readDone: 'Read: {s}', fromCode: 'from the 2D code', checkFields: 'Automatic reading: check before relying on it.',
     viewTitle: 'Scan of {d}', save: 'Save', del: 'Delete', delAsk: 'Delete this scan?', alt: 'Unrolled label', file: 'label',
     run: 'Run scan', stop: 'Stop', starting: 'Starting…', camFail: 'Camera unavailable', https: ' (the page must be opened over https)',
     zone: ['Scan zone', 'Empty holder: drag the frame onto the holder window (move, corners, pinch), then run the scan. It can be wider than the vial: the app measures the vial and picks the strip to use.'],
@@ -333,6 +358,9 @@ const I18N = {
     zoneTitle: 'Zone de scan', resetZone: 'Réinitialiser la zone', zoneReset: 'Zone réinitialisée',
     test: 'Test', testNote: "Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).", testBtn: 'Tester avec une vidéo',
     regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
+    f_marker: 'Marqueur', f_fluor: 'Fluorochrome', f_maker: 'Fabricant', f_cat: 'N° catalogue', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Péremption',
+    reading: "Lecture de l'étiquette…", readFail: "Lecture de l'étiquette impossible : ", reread: 'Relire', saveFields: 'Enregistrer les champs', fieldsSaved: 'Champs enregistrés',
+    readDone: 'Lu : {s}', fromCode: 'lu dans le code 2D', checkFields: 'Lecture automatique : à vérifier avant de s’y fier.',
     viewTitle: 'Scan du {d}', save: 'Enregistrer', del: 'Supprimer', delAsk: 'Supprimer ce scan ?', alt: 'Étiquette déroulée', file: 'etiquette',
     run: 'Lancer le scan', stop: 'Stop', starting: 'Démarrage…', camFail: 'Caméra inaccessible', https: ' (la page doit être ouverte en https)',
     zone: ['Zone de scan', "Socle vide : placez le cadre sur la fenêtre du socle (glisser, coins, pincer), puis lancez le scan. Il peut déborder de la fiole : l'app mesure la fiole et choisit elle-même la bande à utiliser."],
@@ -400,6 +428,8 @@ const DB = {
   async tx(mode, fn){ const db = await this.open(); return new Promise((ok, ko) => { const t = db.transaction('scans', mode), s = t.objectStore('scans'), r = fn(s); t.oncomplete = () => ok(r && r.result); t.onerror = () => ko(t.error); }); },
   all(){ return this.tx('readonly', s => s.getAll()); },
   add(rec){ return this.tx('readwrite', s => s.add(rec)); },
+  put(rec){ return this.tx('readwrite', s => s.put(rec)); },
+  get(id){ return this.tx('readonly', s => s.get(id)); },
   del(id){ return this.tx('readwrite', s => s.delete(id)); }
 };
 const fmtDate = d => new Date(d).toLocaleString(prefs.lang === 'fr' ? 'fr-FR' : 'en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -416,16 +446,58 @@ async function renderRegister(){
   recs.reverse().forEach(r => {
     const u = URL.createObjectURL(r.blob); urls.push(u);
     const b = document.createElement('button'); b.className = 'thumb'; b.type = 'button';
-    b.innerHTML = `<img alt=""><div class="meta"></div>`; b.querySelector('img').src = u; b.querySelector('.meta').textContent = fmtDate(r.date) + (r.partial ? ' · ' + t('partial') : '');
+    b.innerHTML = `<img alt=""><div class="meta"></div>`; b.querySelector('img').src = u; b.querySelector('.meta').textContent = (r.fields && (r.fields.marker || r.fields.fluor) ? [r.fields.marker, r.fields.fluor].filter(Boolean).join(' · ') + ' — ' : '') + fmtDate(r.date) + (r.partial ? ' · ' + t('partial') : '');
     b.onclick = () => openScan(r, u); g.appendChild(b);
   });
 }
+/* Lecture de l'étiquette (reader.js) : lancée à la fin de chaque scan, en arrière-plan ; le scan suivant peut commencer.
+   Les champs sont enregistrés avec le scan et restent modifiables dans sa fiche. */
+const FIELDS = ['marker', 'fluor', 'maker', 'cat', 'lot', 'clone', 'exp'];
+let viewing = null, readingIds = new Set();
+async function readInto(id, canvas){
+  if (!window.LabelReader) return;
+  readingIds.add(id); if (viewing && viewing.id === id) fillFields(viewing);
+  try {
+    if (!canvas){ const r = await DB.get(id); canvas = await blobCanvas(r.blob); }
+    const res = await LabelReader.readLabel(canvas);
+    const rec = await DB.get(id); if (!rec) return;
+    rec.fields = res.fields; rec.code = res.code.map(c => c.text); rec.ocr = res.text; rec.edited = false;
+    await DB.put(rec); renderRegister();
+    if (viewing && viewing.id === id){ viewing = rec; }
+    const sum = [res.fields.marker, res.fields.fluor, res.fields.lot && 'Lot ' + res.fields.lot].filter(Boolean).join(' · ');
+    if (sum) toast(t('readDone', { s: sum }));
+    if (res.errors.length && !sum) toast(t('readFail') + res.errors[0]);
+  } catch (e){ toast(t('readFail') + e.message); }
+  finally { readingIds.delete(id); if (viewing && viewing.id === id) fillFields(viewing); }
+}
+function blobCanvas(blob){
+  return new Promise((ok, ko) => { const im = new Image(), u = URL.createObjectURL(blob);
+    im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; c.getContext('2d').drawImage(im, 0, 0); URL.revokeObjectURL(u); ok(c); };
+    im.onerror = ko; im.src = u; });
+}
+function fillFields(r){
+  const f = r.fields || {}, form = $('fields'), busy = readingIds.has(r.id), fromCode = new Set();
+  // champs confirmés par le code 2D (bord vert)
+  if (r.code && r.code.length){ const g = LabelReader.parseGS1(r.code.join('')); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); }
+  for (const k of FIELDS){ const el = form.elements[k]; el.value = f[k] || ''; el.classList.toggle('code', fromCode.has(k)); el.title = fromCode.has(k) ? t('fromCode') : ''; }
+  $('fieldsNote').textContent = busy ? t('reading') : r.fields && !r.edited ? t('checkFields') : '';
+  $('btnReread').disabled = busy;
+}
+$('fields').onsubmit = async e => {
+  e.preventDefault(); if (!viewing) return;
+  const rec = await DB.get(viewing.id); rec.fields = rec.fields || {};
+  for (const k of FIELDS) rec.fields[k] = $('fields').elements[k].value.trim();
+  rec.edited = true; await DB.put(rec); viewing = rec; fillFields(rec); renderRegister(); toast(t('fieldsSaved'));
+};
+$('btnReread').onclick = () => { if (viewing) readInto(viewing.id); };
 function openScan(r, u){
+  viewing = r; fillFields(r);
   $('viewTitle').textContent = t('viewTitle', { d: fmtDate(r.date) }); $('viewImg').src = u; $('viewDl').href = u; $('viewDl').download = fileName(r.date);
   $('viewDel').onclick = async () => { if (!confirm(t('delAsk'))) return; await DB.del(r.id); $('viewDlg').close(); renderRegister(); };
   $('viewDlg').showModal();
 }
 $('viewClose').onclick = () => $('viewDlg').close();
+$('viewDlg').addEventListener('close', () => { viewing = null; });
 renderRegister();
 
 /* ---------- Zone de scan (fractions de l'image vidéo) ---------- */
@@ -789,7 +861,7 @@ async function finish(){
   setGauge(100);
   navigator.vibrate && navigator.vibrate([60, 60, 120]);
   const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-  try { await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); }
+  try { const id = await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); renderRegister(); readInto(id, canvas); }
   catch (e){ toast(t('saveFail') + e.message); }
   toast(junction ? t('saved') : t('savedNoJ'));
   if ((source.kind === 'file' && !FILE_DETECT) || !prefs.autoNext){ setState('zone', t('again')); return; }
