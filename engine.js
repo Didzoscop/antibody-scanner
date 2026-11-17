@@ -383,6 +383,30 @@ class ScanEngine{
       junction = true; start = r + 1; len = P - (r - l + 1);
       while (start - P >= umin) start -= P;            // occurrence la plus à gauche
     }
+    // Pas d'espace sombre entre les bords : l'étiquette fait un peu plus d'un tour et se chevauche (fiole BioLegend
+    // FcεRIα : coupée deux fois au milieu du texte, là où le scan avait commencé). On coupe alors sur le bord du rabat,
+    // une ligne verticale nette sur toute la hauteur (la médiane, sur la hauteur, de l'écart entre colonnes voisines est
+    // forte ; pour du texte elle reste faible, la plupart des lignes étant blanches). À défaut, dans la bande la plus vide
+    // de texte, pour ne jamais couper un mot.
+    if (!junction){
+      const lo = umin + 3, hi = Math.min(umax - 3, umin + P - 1 + 3), edge = new Float32Array(CAP), tex = new Float32Array(CAP), d = [];
+      for (let u = lo; u <= hi; u++){
+        if (!filled[u - 2] || !filled[u + 2]) continue; d.length = 0; let t = 0;
+        for (let y = Math.round(H2 * .05); y < H2 * .95; y++){ const v = Math.abs(gm[(u + 2) * H2 + y] - gm[(u - 2) * H2 + y]); d.push(v); t += v; }
+        edge[u] = median(d); tex[u] = t / d.length;
+      }
+      let ep = lo; for (let u = lo; u <= hi; u++) if (edge[u] > edge[ep]) ep = u;
+      const ev = []; for (let u = lo; u <= hi; u++) if (filled[u]) ev.push(edge[u]);
+      if (edge[ep] > Math.max(10, 3 * median(ev))){ start = ep + 2; junction = 'edge'; }
+      else {
+        let best = Infinity;
+        for (let u = lo + 10; u <= hi - 10; u++){
+          let s = 0, n = 0; for (let k = -10; k <= 10; k++) if (filled[u + k]){ s += tex[u + k]; n++; }
+          if (n > 15 && s / n < best){ best = s / n; start = u; }
+        }
+      }
+      while (start - P >= umin) start -= P;
+    }
     // On suit le panorama tel qu'il a été assemblé, de la jonction jusqu'à un tour plus loin. Mais chaque morceau de
     // l'étiquette a été vu une fois par tour : un bloc de BL colonnes flou ou manquant est pris dans un autre tour,
     // là où il est net. Les tours ne se superposent pas exactement (le suivi recale chaque image sur les colonnes vues

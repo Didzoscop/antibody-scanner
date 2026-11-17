@@ -284,6 +284,11 @@ faire défiler pour trouver « Start scan » (v0.14). Les panneaux fermés sont 
 6. **Mise à plat** : on cherche la jonction des deux bords de l'étiquette, c'est-à-dire une colonne
    sombre sur presque toute la hauteur (médiane de l'obscurité entre 5 et 95 % de la hauteur, avec un
    contraste supérieur à 25 niveaux). L'image commence juste après et finit juste avant.
+   - **Sans espace sombre (v0.18)** : étiquette qui fait un peu plus d'un tour et se chevauche (fiole BioLegend
+     FcεRIα, deux scans coupés au milieu du texte, là où le scan avait commencé). On coupe sur le bord du rabat : colonne
+     où la médiane, sur la hauteur, de |g(u+2) − g(u−2)| est > max(10, 3 × sa médiane sur le tour) ; à défaut, au
+     centre de la bande de 21 colonnes la moins texturée. Vérifié en désactivant l'espace sombre : fiole BD CD44, même
+     coupe qu'avec l'espace sombre ; BioLegend CD183, aucun mot coupé. Pas encore de vidéo de la fiole FcεRIα.
    - **Par blocs de 32 colonnes (v0.11)** : on suit le panorama tel quel ; un bloc flou, manquant ou au-delà
      du panorama est pris dans un autre tour (x ± kP), recalé en largeur (±10) et en hauteur (±32 px) par
      Pearson sur un bloc vu en entier des deux côtés (sur quelques colonnes, le recalage se trompait), le
