@@ -229,6 +229,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 .rv-fields .row{display:flex;gap:.5rem;padding:0 var(--b) var(--b) 0}.rv-fields .row .btn{flex:1}
 @media (orientation:landscape){.rv-body{flex-direction:row}.rv-img{flex:1}.rv-img img{max-height:calc(100vh - 6rem)}.rv-fields{flex:1}}
 body.reviewing .rotate{display:none!important}
+dialog.choose .col{display:flex;flex-direction:column;gap:.6rem;padding:0 var(--b) var(--b) 0;min-width:15rem}
 .panel .last{display:grid;grid-template-columns:44px 1fr;gap:.5rem;align-items:center}
 .panel .last img{width:44px;height:44px;object-fit:cover;background:#000;display:block}
 .panel .last b{display:block;font-size:.95rem}.panel .last span{display:block;font-size:.78rem;color:var(--muted)}
@@ -388,6 +389,15 @@ body.reviewing .rotate{display:none!important}
     </form>
   </div>
 </section>
+<!-- choix de la relecture : tout ce qui reste à vérifier, ou seulement la dernière session -->
+<dialog class="pix choose" id="rvChoose">
+  <h2 data-i18n="reviewWhat"></h2>
+  <div class="col">
+    <button class="btn primary" id="rvAll" type="button"></button>
+    <button class="btn" id="rvSession" type="button"></button>
+    <button class="btn" id="rvCancel" type="button" data-i18n="cancel"></button>
+  </div>
+</dialog>
 <div class="toast" id="toast" role="status"></div>
 <div class="rotate" id="rotate"><div class="phone" aria-hidden="true"></div><p data-i18n="rotate"></p></div>
 
@@ -396,7 +406,7 @@ body.reviewing .rotate{display:none!important}
 <script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.22';
+const VERSION = 'v0.23';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -419,9 +429,10 @@ const I18N = {
     test: 'Test', testNote: 'Replays a recorded video as if it were the camera (no holder detection).', testBtn: 'Test with a video',
     regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
     f_marker: 'Marker', f_fluor: 'Fluorochrome', f_maker: 'Manufacturer', f_cat: 'Catalogue no.', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Expiry',
+    reviewWhat: 'What to review?', rvAllN: 'Everything to check ({n})', rvSessionN: 'Last session only ({n})', cancel: 'Cancel',
     review: 'Review ({n})', reviewNone: 'Nothing to review', csvLast: 'CSV · session ({n})', prev: '◀ Back', skip: 'Skip', okNext: 'Correct ✓ next',
     rvPos: '{i} / {n} to check', rvDone: 'All scans are checked.', confirmSure: 'Confirm the {n} scans read with confidence?',
-    statSure: 'Sure readings: {p} % right ({n} fields checked).', statUnsure: 'Uncertain: {p} % right ({n}).', statNone: 'Reliability: measured as you check scans.',
+    statCode: 'From barcodes: {p} % right ({n} fields).', statSure: 'Sure text readings: {p} % right ({n} fields checked).', statUnsure: 'Uncertain: {p} % right ({n}).', statNone: 'Reliability: measured as you check scans.',
     lastReading: 'Reading…',
     addManual: '+ Add', manual: 'manual entry', newEntry: 'New antibody', scanIt: 'Scan this vial',
     search: 'Search (marker, lot, cat…)', exportCsv: 'CSV · all', backup: 'Backup', restore: 'Restore',
@@ -461,9 +472,10 @@ const I18N = {
     test: 'Test', testNote: "Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).", testBtn: 'Tester avec une vidéo',
     regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
     f_marker: 'Marqueur', f_fluor: 'Fluorochrome', f_maker: 'Fabricant', f_cat: 'N° catalogue', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Péremption',
+    reviewWhat: 'Que relire ?', rvAllN: 'Tout ce qui est à vérifier ({n})', rvSessionN: 'Dernière session seulement ({n})', cancel: 'Annuler',
     review: 'Relecture ({n})', reviewNone: 'Rien à relire', csvLast: 'CSV · session ({n})', prev: '◀ Retour', skip: 'Passer', okNext: 'Juste ✓ suivant',
     rvPos: '{i} / {n} à vérifier', rvDone: 'Tous les scans sont vérifiés.', confirmSure: 'Valider les {n} scans lus avec certitude ?',
-    statSure: 'Lectures sûres : {p} % justes ({n} champs vérifiés).', statUnsure: 'Incertaines : {p} % justes ({n}).', statNone: 'Fiabilité : mesurée au fil de vos vérifications.',
+    statCode: 'Codes-barres : {p} % justes ({n} champs).', statSure: 'Texte lu avec certitude : {p} % juste ({n} champs vérifiés).', statUnsure: 'Incertaines : {p} % justes ({n}).', statNone: 'Fiabilité : mesurée au fil de vos vérifications.',
     lastReading: 'Lecture…',
     addManual: '+ Ajouter', manual: 'saisie manuelle', newEntry: 'Nouvel anticorps', scanIt: 'Scanner cette fiole',
     search: 'Rechercher (marqueur, lot, cat…)', exportCsv: 'CSV · tout', backup: 'Sauvegarde', restore: 'Restaurer',
@@ -646,20 +658,22 @@ const needsReview = r => !isChecked(r) && !r.partial && (r.read || r.manual);
 /* Fiabilité mesurée sur les scans vérifiés : un champ dont la valeur lue n'a pas été corrigée était juste. Séparément
    pour les champs que l'app jugeait sûrs et ceux qu'elle jugeait incertains. */
 function readingStats(recs){
-  const st = { sure: [0, 0], unsure: [0, 0] };
+  const st = { code: [0, 0], sure: [0, 0], unsure: [0, 0] };
   for (const r of recs){
     if (!isChecked(r) || !r.auto || !r.conf) continue;
     for (const k of FIELDS){
       const a = r.auto[k] || '', v = (r.fields || {})[k] || ''; if (!a) continue;
-      const g = r.conf[k] === 'unsure' ? 'unsure' : 'sure'; st[g][1]++; if (a === v) st[g][0]++;
+      const g = r.conf[k] === 'unsure' ? 'unsure' : r.conf[k] === 'code' ? 'code' : 'sure'; st[g][1]++; if (a === v) st[g][0]++;
     }
   }
   return st;
 }
 function statText(recs){
   const st = readingStats(recs), p = a => Math.round(100 * a[0] / a[1]);
-  if (!st.sure[1] && !st.unsure[1]) return t('statNone');
-  return (st.sure[1] ? t('statSure', { p: p(st.sure), n: st.sure[1] }) : '') + (st.unsure[1] ? ' ' + t('statUnsure', { p: p(st.unsure), n: st.unsure[1] }) : '');
+  if (!st.sure[1] && !st.unsure[1] && !st.code[1]) return t('statNone');
+  // les champs pris dans un code-barres sont sûrs aussi, mais leur fiabilité est montrée à part
+  return [st.code[1] && t('statCode', { p: p(st.code), n: st.code[1] }), st.sure[1] && t('statSure', { p: p(st.sure), n: st.sure[1] }),
+    st.unsure[1] && t('statUnsure', { p: p(st.unsure), n: st.unsure[1] })].filter(Boolean).join(' ');
 }
 function fillFields(r){
   const f = r.fields || {}, form = $('fields'), busy = readingIds.has(r.id), fromCode = new Set();
@@ -734,13 +748,25 @@ $('btnReg2').onclick = () => openSheet('sheetRegister');
    scans ont été lus entièrement avec certitude, on propose d'abord de les valider d'un coup. En portrait si possible :
    l'étiquette reste visible au-dessus du clavier. Chaque frappe est enregistrée. */
 let rvList = [], rvIdx = 0, rvRec = null, rvTimer = null;
-async function openReview(){
-  const recs = (await DB.all()).filter(needsReview);
+// Le bouton Relecture demande d'abord : tout ce qui reste à vérifier, ou la dernière session seulement
+async function askReview(){
+  const all = await DB.all(), sess = new Set(lastSession(all).map(r => r.id));
+  const nAll = all.filter(needsReview).length, nSess = all.filter(r => needsReview(r) && sess.has(r.id)).length;
+  $('rvAll').textContent = t('rvAllN', { n: nAll }); $('rvSession').textContent = t('rvSessionN', { n: nSess });
+  $('rvSession').disabled = !nSess || nSess === nAll;
+  $('rvChoose').showModal();
+}
+$('rvAll').onclick = () => { $('rvChoose').close(); openReview(false); };
+$('rvSession').onclick = () => { $('rvChoose').close(); openReview(true); };
+$('rvCancel').onclick = () => $('rvChoose').close();
+async function openReview(sessionOnly){
+  const all0 = await DB.all(), sess = new Set(lastSession(all0).map(r => r.id)), inScope = r => !sessionOnly || sess.has(r.id);
+  const recs = all0.filter(r => needsReview(r) && inScope(r));
   const sure = recs.filter(r => allSure(r) && !FIELDS.some(k => r.conf[k] === 'unsure'));
   if (sure.length && confirm(t('confirmSure', { n: sure.length }))){
     for (const r of sure){ r.checked = true; await DB.put(r); }
   }
-  rvList = (await DB.all()).filter(needsReview).sort((a, b) => doubt(b) - doubt(a) || a.date - b.date).map(r => r.id);
+  rvList = (await DB.all()).filter(r => needsReview(r) && inScope(r)).sort((a, b) => doubt(b) - doubt(a) || a.date - b.date).map(r => r.id);
   closeSheets();
   if (!rvList.length){ toast(t('rvDone')); renderRegister(); return; }
   document.body.classList.add('reviewing'); $('review').classList.remove('hidden');
@@ -782,7 +808,7 @@ async function closeReview(){
   renderRegister();
 }
 $('rvClose').onclick = closeReview;
-$('btnReview').onclick = openReview;
+$('btnReview').onclick = askReview;
 // Ajout à la main, sans scan : une fiche vide, enregistrée tout de suite (marquée « saisie manuelle » ; « Scanner cette
 // fiole » peut lui ajouter une image plus tard). Une fiche laissée entièrement vide est supprimée à la fermeture.
 $('btnAdd').onclick = async () => {

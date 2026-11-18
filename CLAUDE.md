@@ -109,6 +109,9 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
   pas d'alternatives en v7. `rec.conf` et `rec.auto` (valeurs lues) sont gardés ; `readingStats` compare `auto` aux
   champs des scans vérifiés et affiche la fiabilité mesurée (registre, relecture). Test : sûrs 37/37 justes,
   incertains 4/8.
+- **v0.23** : les champs pris dans un code-barres (confiance 'code') comptent comme sûrs (validation en bloc) et leur
+  fiabilité est affichée à part (« Codes-barres : x % justes »). Le bouton Relecture ouvre un choix : tout ce qui reste
+  à vérifier, ou la dernière session seulement (`lastSession`, pause d'1 h).
 - **Relecture (v0.21)** : page plein écran, portrait si possible (`screen.orientation.lock('portrait')`, l'écran
   « tournez le téléphone » est masqué) ; propose d'abord de valider d'un coup les scans entièrement sûrs, puis fait
   défiler les autres, les plus douteux d'abord ; champs incertains en orange « ? », champs clés vides en pointillés.
