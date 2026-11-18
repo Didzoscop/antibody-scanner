@@ -199,6 +199,24 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 .fields label{display:grid;grid-template-columns:7.5rem 1fr;align-items:center;gap:.5rem;font-size:.85rem}
 .fields input{min-width:0;border:2px solid var(--ink);background:var(--paper);padding:.15rem .35rem;font-size:16px;border-radius:0}   /* 16 px : sinon Safari sur iPhone zoome sur le champ */
 .fields input.code{border-color:var(--ok)}
+.fields input.unsure{border-color:#E8812F;background:#FFF1E2}
+.fields input.missing{border-style:dashed;border-color:var(--muted)}
+.fields label.q span::after{content:' ?';color:#E8812F;font-weight:700}
+/* relecture : plein écran, en colonne en portrait, côte à côte en paysage */
+.review{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;padding:env(safe-area-inset-top,0) calc(.6rem + var(--sr)) env(safe-area-inset-bottom,0) calc(.6rem + var(--sl))}
+.rv-head{display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-bottom:3px solid var(--ink)}
+.rv-head .note{flex:1;font-size:.78rem;color:var(--muted)}
+.rv-body{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.6rem;padding:.6rem 0}
+.rv-img{display:flex;justify-content:center;background:var(--viewer);border:var(--b) solid var(--ink)}
+.rv-img img{display:block;max-width:100%;max-height:38vh;object-fit:contain}
+.rv-img .noimg{display:grid;place-items:center;height:20vh;color:var(--muted);font-size:2rem}
+.rv-fields label{grid-template-columns:6.5rem 1fr}
+.rv-fields .row{display:flex;gap:.5rem;padding:0 var(--b) var(--b) 0}.rv-fields .row .btn{flex:1}
+@media (orientation:landscape){.rv-body{flex-direction:row}.rv-img{flex:1}.rv-img img{max-height:calc(100vh - 6rem)}.rv-fields{flex:1}}
+body.reviewing .rotate{display:none!important}
+.panel .last{display:grid;grid-template-columns:44px 1fr;gap:.5rem;align-items:center}
+.panel .last img{width:44px;height:44px;object-fit:cover;background:#000;display:block}
+.panel .last b{display:block;font-size:.95rem}.panel .last span{display:block;font-size:.78rem;color:var(--muted)}
 .fields .small{margin:0;font-size:.78rem;color:var(--muted)}
 @media (max-height:520px){.view img{max-width:min(48vw,640px)}}
 .toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);
@@ -301,11 +319,14 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
     <input type="search" id="regSearch" data-i18n-ph="search" autocomplete="off">
     <div class="row">
       <button class="btn" id="btnAdd" type="button" data-i18n="addManual"></button>
+      <button class="btn primary" id="btnReview" type="button"></button>
+      <button class="btn" id="btnCsvLast" type="button"></button>
       <button class="btn" id="btnCsv" type="button" data-i18n="exportCsv"></button>
       <button class="btn" id="btnBackup" type="button" data-i18n="backup"></button>
       <button class="btn" id="btnRestore" type="button" data-i18n="restore"></button>
       <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     </div>
+    <p class="note" id="statNote"></p>
     <p class="note" id="storeNote"></p>
   </div>
   <div class="sheet-body"><ul class="reglist" id="regList"></ul></div>
@@ -332,6 +353,24 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
     </div>
   </div>
 </dialog>
+<!-- Relecture : les scans à vérifier défilent un par un, les champs incertains en orange. Utilisable en portrait
+     (le clavier ne cache pas l'étiquette). -->
+<section class="review hidden" id="review">
+  <div class="rv-head"><b id="rvPos"></b><span class="note" id="rvStat"></span><button class="btn" id="rvClose" type="button" data-i18n="close"></button></div>
+  <div class="rv-body">
+    <div class="rv-img"><img id="rvImg" alt=""><i class="noimg hidden" id="rvNoImg">✎</i></div>
+    <form class="fields rv-fields" id="rvFields" autocomplete="off">
+      <label><span data-i18n="f_marker"></span><input name="marker"></label>
+      <label><span data-i18n="f_fluor"></span><input name="fluor"></label>
+      <label><span data-i18n="f_cat"></span><input name="cat" inputmode="text"></label>
+      <label><span data-i18n="f_lot"></span><input name="lot"></label>
+      <label><span data-i18n="f_maker"></span><input name="maker"></label>
+      <label><span data-i18n="f_clone"></span><input name="clone"></label>
+      <label><span data-i18n="f_exp"></span><input name="exp"></label>
+      <div class="row"><button class="btn" type="button" id="rvPrev" data-i18n="prev"></button><button class="btn" type="button" id="rvSkip" data-i18n="skip"></button><button class="btn primary" type="submit" id="rvOk" data-i18n="okNext"></button></div>
+    </form>
+  </div>
+</section>
 <div class="toast" id="toast" role="status"></div>
 <div class="rotate" id="rotate"><div class="phone" aria-hidden="true"></div><p data-i18n="rotate"></p></div>
 
@@ -340,7 +379,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.20';
+const VERSION = 'v0.21';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -363,6 +402,10 @@ const I18N = {
     test: 'Test', testNote: 'Replays a recorded video as if it were the camera (no holder detection).', testBtn: 'Test with a video',
     regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
     f_marker: 'Marker', f_fluor: 'Fluorochrome', f_maker: 'Manufacturer', f_cat: 'Catalogue no.', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Expiry',
+    review: 'Review ({n})', reviewNone: 'Nothing to review', csvLast: 'CSV: last session ({n})', prev: '◀ Back', skip: 'Skip', okNext: 'Correct ✓ next',
+    rvPos: '{i} / {n} to check', rvDone: 'All scans are checked.', confirmSure: 'Confirm the {n} scans read with confidence?',
+    statSure: 'Sure readings: {p} % right ({n} fields checked).', statUnsure: 'Uncertain: {p} % right ({n}).', statNone: 'Reliability: measured as you check scans.',
+    lastReading: 'Reading…',
     addManual: '+ Add manually', manual: 'manual entry', newEntry: 'New antibody', scanIt: 'Scan this vial',
     search: 'Search (marker, lot, cat…)', exportCsv: 'Export CSV', backup: 'Backup', restore: 'Restore',
     regStat: '{n} scans · {c} checked · {t} to check', regStatRead: ' · {r} reading', unread: 'Not read yet', st_ok: 'checked', st_todo: 'to check', st_part: 'incomplete',
@@ -401,6 +444,10 @@ const I18N = {
     test: 'Test', testNote: "Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).", testBtn: 'Tester avec une vidéo',
     regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
     f_marker: 'Marqueur', f_fluor: 'Fluorochrome', f_maker: 'Fabricant', f_cat: 'N° catalogue', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Péremption',
+    review: 'Relecture ({n})', reviewNone: 'Rien à relire', csvLast: 'CSV : dernière session ({n})', prev: '◀ Retour', skip: 'Passer', okNext: 'Juste ✓ suivant',
+    rvPos: '{i} / {n} à vérifier', rvDone: 'Tous les scans sont vérifiés.', confirmSure: 'Valider les {n} scans lus avec certitude ?',
+    statSure: 'Lectures sûres : {p} % justes ({n} champs vérifiés).', statUnsure: 'Incertaines : {p} % justes ({n}).', statNone: 'Fiabilité : mesurée au fil de vos vérifications.',
+    lastReading: 'Lecture…',
     addManual: '+ Ajouter à la main', manual: 'saisie manuelle', newEntry: 'Nouvel anticorps', scanIt: 'Scanner cette fiole',
     search: 'Rechercher (marqueur, lot, cat…)', exportCsv: 'Export CSV', backup: 'Sauvegarde', restore: 'Restaurer',
     regStat: '{n} scans · {c} vérifiés · {t} à vérifier', regStatRead: ' · {r} en lecture', unread: 'Pas encore lu', st_ok: 'vérifié', st_todo: 'à vérifier', st_part: 'incomplet',
@@ -497,6 +544,9 @@ async function renderRegister(){
   if (!$('sheetRegister').classList.contains('open')) return;
   const nc = recs.filter(isChecked).length, nr = recs.filter(r => readingIds.has(r.id)).length;
   $('regStat').textContent = t('regStat', { n: recs.length, c: nc, t: recs.length - nc }) + (nr ? t('regStatRead', { r: nr }) : '');
+  $('statNote').textContent = statText(recs);
+  const nrv = recs.filter(needsReview).length; $('btnReview').textContent = nrv ? t('review', { n: nrv }) : t('reviewNone'); $('btnReview').disabled = !nrv;
+  $('btnCsvLast').textContent = t('csvLast', { n: lastSession(recs).length });
   urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
   const list = $('regList'); list.innerHTML = '';
   if (!recs.length){ list.innerHTML = `<li class="empty">${t('regNone')}</li>`; return; }
@@ -512,6 +562,7 @@ async function renderRegister(){
     b.querySelector('b').textContent = label(r) || (r.manual ? t('newEntry') : readingIds.has(r.id) ? t('reading') : t('unread'));
     b.querySelector('.l2').textContent = [f.cat && 'Cat ' + f.cat, f.lot && 'Lot ' + f.lot, f.maker].filter(Boolean).join(' · ');
     const l3 = b.querySelector('.l3'); l3.textContent = fmtDate(r.date);
+    if (!isChecked(r) && r.conf && FIELDS.some(k => r.conf[k] === 'unsure')) b.querySelector('b').textContent += ' ?';
     const st = document.createElement('i'); st.className = 'badge ' + (r.partial ? 'bad' : isChecked(r) ? 'ok' : 'todo');
     st.textContent = t(r.partial ? 'st_part' : isChecked(r) ? 'st_ok' : 'st_todo'); l3.appendChild(st);
     if (r.manual && !r.blob){ const m = document.createElement('i'); m.className = 'badge'; m.textContent = t('manual'); l3.appendChild(m); }
@@ -540,10 +591,13 @@ async function readInto(id, canvas, codes = []){
       rec.fields = { ...res.fields, ...typed };
     } else { rec.fields = res.fields; rec.edited = false; rec.checked = false; }
     rec.code = res.code.map(c => c.text); rec.ocr = res.text; rec.read = true;
+    // confiance de chaque champ, et ce que l'app avait lu : comparé à la version vérifiée, ça mesure sa fiabilité
+    rec.conf = res.conf; rec.auto = { ...res.fields };
     await DB.put(rec);
     if (viewing && viewing.id === id){ viewing = rec; }
     const sum = [res.fields.marker, res.fields.fluor, res.fields.lot && 'Lot ' + res.fields.lot].filter(Boolean).join(' · ');
-    if (sum){ toast(t('readDone', { s: sum })); showLast(rec); }
+    if (sum) toast(t('readDone', { s: sum }));
+    showLast(rec);
     if (res.errors.length && !sum) toast(t('readFail') + res.errors[0]);
   } catch (e){ toast(t('readFail') + e.message); }
   finally { readingIds.delete(id); if (viewing && viewing.id === id) fillFields(viewing); renderRegister(); }
@@ -559,11 +613,43 @@ function blobCanvas(blob){
     im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; c.getContext('2d').drawImage(im, 0, 0); URL.revokeObjectURL(u); ok(c); };
     im.onerror = ko; im.src = u; });
 }
+// orange : lu sans certitude ; pointillés : champ clé vide. Plus rien une fois le scan vérifié.
+const KEY = ['marker', 'fluor', 'cat', 'lot'];
+function markConf(form, r){
+  const c = r.conf || {}, done = isChecked(r);
+  for (const k of FIELDS){
+    const el = form.elements[k], q = !done && c[k] === 'unsure';
+    el.classList.toggle('unsure', q); el.closest('label').classList.toggle('q', q);
+    el.classList.toggle('missing', !done && KEY.includes(k) && !el.value);
+  }
+}
+// scan dont tous les champs clés présents sont sûrs (ou lus dans le code) : la relecture peut les valider d'un coup
+const allSure = r => r.conf && KEY.every(k => r.conf[k] === 'sure' || r.conf[k] === 'code') ;
+const needsReview = r => !isChecked(r) && !r.partial && (r.read || r.manual);
+/* Fiabilité mesurée sur les scans vérifiés : un champ dont la valeur lue n'a pas été corrigée était juste. Séparément
+   pour les champs que l'app jugeait sûrs et ceux qu'elle jugeait incertains. */
+function readingStats(recs){
+  const st = { sure: [0, 0], unsure: [0, 0] };
+  for (const r of recs){
+    if (!isChecked(r) || !r.auto || !r.conf) continue;
+    for (const k of FIELDS){
+      const a = r.auto[k] || '', v = (r.fields || {})[k] || ''; if (!a) continue;
+      const g = r.conf[k] === 'unsure' ? 'unsure' : 'sure'; st[g][1]++; if (a === v) st[g][0]++;
+    }
+  }
+  return st;
+}
+function statText(recs){
+  const st = readingStats(recs), p = a => Math.round(100 * a[0] / a[1]);
+  if (!st.sure[1] && !st.unsure[1]) return t('statNone');
+  return (st.sure[1] ? t('statSure', { p: p(st.sure), n: st.sure[1] }) : '') + (st.unsure[1] ? ' ' + t('statUnsure', { p: p(st.unsure), n: st.unsure[1] }) : '');
+}
 function fillFields(r){
   const f = r.fields || {}, form = $('fields'), busy = readingIds.has(r.id), fromCode = new Set();
   // champs confirmés par le code 2D (bord vert)
   for (const c of r.code || []){ const g = LabelReader.parseCode(c); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); if (g.ref && /^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
   for (const k of FIELDS){ const el = form.elements[k]; el.value = f[k] || ''; el.classList.toggle('code', fromCode.has(k)); el.title = fromCode.has(k) ? t('fromCode') : ''; }
+  markConf(form, r);
   $('fieldsNote').textContent = busy ? t('reading') : r.fields && !isChecked(r) && !(r.manual && !r.blob) ? t('checkFields') : '';
   $('btnReread').disabled = busy;
   $('btnChecked').classList.toggle('primary', !isChecked(r));
@@ -606,14 +692,79 @@ $('viewDlg').addEventListener('close', async () => {
   if (v.manual && !v.blob && empty){ await DB.del(v.id); renderRegister(); return; }
   viewing = v; await saveFields(false); viewing = null;
 });
-// dernier scan lu, dans le panneau du scan : on voit tout de suite ce qui a été lu, un appui ouvre la fiche
-function showLast(r){
-  const el = $('lastScan'), s = [label(r), r.fields && r.fields.lot && 'Lot ' + r.fields.lot].filter(Boolean).join(' · ');
-  if (!s) return;
-  el.textContent = t('last', { s }); el.classList.remove('hidden');
-  el.onclick = async () => { const rec = await DB.get(r.id); if (rec){ const u = rec.blob ? URL.createObjectURL(rec.blob) : ''; if (u) urls.push(u); openScan(rec, u); } };
+// Dernier anticorps lu, dans le panneau du scan : vignette, marqueur, fluorochrome, Cat, Lot. Mis à jour seulement
+// quand aucun scan n'est en cours (la lecture d'une fiole finit souvent pendant la rotation de la suivante : la carte
+// changeait alors en plein scan). Un appui ouvre la fiche.
+let lastPending = null;
+function showLast(r){ lastPending = r; if (state !== 'scan') applyLast(); }
+async function applyLast(){
+  const r0 = lastPending; if (!r0) return; lastPending = null;
+  const r = await DB.get(r0.id) || r0, f = r.fields || {}, el = $('lastScan');
+  const u = r.blob ? URL.createObjectURL(r.blob) : ''; if (u) urls.push(u);
+  const q = r.conf && FIELDS.some(k => r.conf[k] === 'unsure') ? ' ?' : '';
+  el.innerHTML = (u ? '<img alt="">' : '<i></i>') + '<div><b></b><span></span></div>';
+  if (u) el.querySelector('img').src = u;
+  el.querySelector('b').textContent = ([f.marker, f.fluor].filter(Boolean).join(' · ') || t('lastReading')) + q;
+  el.querySelector('span').textContent = [f.cat && 'Cat ' + f.cat, f.lot && 'Lot ' + f.lot].filter(Boolean).join(' · ');
+  el.classList.remove('hidden');
+  el.onclick = async () => { const rec = await DB.get(r.id); if (rec){ const v = rec.blob ? URL.createObjectURL(rec.blob) : ''; if (v) urls.push(v); openScan(rec, v); } };
 }
 $('btnReg2').onclick = () => openSheet('sheetRegister');
+
+/* ---------- Relecture ----------
+   Les scans à vérifier défilent un par un : d'abord ceux qui ont des champs incertains (en orange) ou manquants. Si des
+   scans ont été lus entièrement avec certitude, on propose d'abord de les valider d'un coup. En portrait si possible :
+   l'étiquette reste visible au-dessus du clavier. Chaque frappe est enregistrée. */
+let rvList = [], rvIdx = 0, rvRec = null, rvTimer = null;
+async function openReview(){
+  const recs = (await DB.all()).filter(needsReview);
+  const sure = recs.filter(r => allSure(r) && !FIELDS.some(k => r.conf[k] === 'unsure'));
+  if (sure.length && confirm(t('confirmSure', { n: sure.length }))){
+    for (const r of sure){ r.checked = true; await DB.put(r); }
+  }
+  rvList = (await DB.all()).filter(needsReview).sort((a, b) => doubt(b) - doubt(a) || a.date - b.date).map(r => r.id);
+  closeSheets();
+  if (!rvList.length){ toast(t('rvDone')); renderRegister(); return; }
+  document.body.classList.add('reviewing'); $('review').classList.remove('hidden');
+  try { await screen.orientation?.lock?.('portrait'); } catch (e){}
+  rvIdx = 0; showReview();
+}
+const doubt = r => (r.conf ? FIELDS.filter(k => r.conf[k] === 'unsure').length : 0) + KEY.filter(k => !(r.fields || {})[k]).length;
+async function showReview(){
+  const all = await DB.all();
+  $('rvStat').textContent = statText(all);
+  if (rvIdx >= rvList.length){ closeReview(); toast(t('rvDone')); return; }
+  rvRec = await DB.get(rvList[rvIdx]);
+  if (!rvRec){ rvList.splice(rvIdx, 1); return showReview(); }
+  $('rvPos').textContent = t('rvPos', { i: rvIdx + 1, n: rvList.length });
+  const u = rvRec.blob ? URL.createObjectURL(rvRec.blob) : ''; if (u) urls.push(u);
+  $('rvImg').src = u; $('rvImg').classList.toggle('hidden', !u); $('rvNoImg').classList.toggle('hidden', !!u);
+  const form = $('rvFields'), f = rvRec.fields || {};
+  for (const k of FIELDS) form.elements[k].value = f[k] || '';
+  markConf(form, rvRec);
+  $('rvPrev').disabled = rvIdx === 0;
+  document.querySelector('.rv-body').scrollTop = 0;
+}
+async function rvSave(checked){
+  if (!rvRec) return;
+  const rec = await DB.get(rvRec.id); if (!rec) return;
+  rec.fields = rec.fields || {};
+  for (const k of FIELDS) rec.fields[k] = $('rvFields').elements[k].value.trim();
+  if (checked) rec.checked = true;
+  await DB.put(rec); rvRec = rec;
+}
+$('rvFields').oninput = () => { clearTimeout(rvTimer); rvTimer = setTimeout(() => rvSave(false), 400); };
+$('rvFields').onsubmit = async e => { e.preventDefault(); clearTimeout(rvTimer); await rvSave(true); rvIdx++; showReview(); };
+$('rvSkip').onclick = async () => { clearTimeout(rvTimer); await rvSave(false); rvIdx++; showReview(); };
+$('rvPrev').onclick = async () => { clearTimeout(rvTimer); await rvSave(false); rvIdx = Math.max(0, rvIdx - 1); showReview(); };
+async function closeReview(){
+  clearTimeout(rvTimer); await rvSave(false); rvRec = null;
+  $('review').classList.add('hidden'); document.body.classList.remove('reviewing');
+  try { if (state !== 'idle') await screen.orientation?.lock?.('landscape'); else screen.orientation?.unlock?.(); } catch (e){}
+  renderRegister();
+}
+$('rvClose').onclick = closeReview;
+$('btnReview').onclick = openReview;
 // Ajout à la main, sans scan : une fiche vide, enregistrée tout de suite (marquée « saisie manuelle » ; « Scanner cette
 // fiole » peut lui ajouter une image plus tard). Une fiche laissée entièrement vide est supprimée à la fermeture.
 $('btnAdd').onclick = async () => {
@@ -632,17 +783,26 @@ async function giveFile(blob, name){
   const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
 }
-$('btnCsv').onclick = async () => {
-  const recs = await DB.all(); if (!recs.length){ toast(t('csvNone')); return; }
-  const cols = ['id', 'date', 'marker', 'fluorochrome', 'manufacturer', 'catalogue', 'lot', 'clone', 'expiry', 'gtin', 'code_2d', 'checked', 'incomplete_scan', 'source'];
+// Session : scans faits à moins d'une heure d'intervalle. La dernière session = les scans depuis la dernière pause d'1 h.
+const SESSION_GAP = 60 * 60 * 1000;
+function lastSession(recs){
+  const s = [...recs].sort((a, b) => a.date - b.date); if (!s.length) return [];
+  let i = s.length - 1; while (i > 0 && s[i].date - s[i - 1].date < SESSION_GAP) i--;
+  return s.slice(i);
+}
+$('btnCsv').onclick = async () => exportCsv(await DB.all(), '');
+$('btnCsvLast').onclick = async () => exportCsv(lastSession(await DB.all()), '_session');
+async function exportCsv(recs, tag){
+  if (!recs.length){ toast(t('csvNone')); return; }
+  const cols = ['id', 'date', 'marker', 'fluorochrome', 'manufacturer', 'catalogue', 'lot', 'clone', 'expiry', 'code_2d', 'checked', 'complete_scan', 'source'];
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const iso = d => { const x = new Date(d), p = n => String(n).padStart(2, '0'); return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())} ${p(x.getHours())}:${p(x.getMinutes())}`; };
   const rows = recs.map(r => { const f = r.fields || {};
-    return [r.id, iso(r.date), f.marker, f.fluor, f.maker, f.cat, f.lot, f.clone, f.exp, f.gtin, (r.code || []).join(' | '), isChecked(r) ? 'yes' : 'no', r.partial ? 'yes' : 'no', r.manual && !r.blob ? 'manual' : 'scan'].map(q).join(','); });
+    return [r.id, iso(r.date), f.marker, f.fluor, f.maker, f.cat, f.lot, f.clone, f.exp, (r.code || []).join(' | '), isChecked(r) ? 'yes' : 'no', r.partial ? 'no' : 'yes', r.manual && !r.blob ? 'manual' : 'scan'].map(q).join(','); });
   // BOM : Excel ouvre alors le fichier en UTF-8 (µ, α, ®)
   const blob = new Blob(['﻿' + cols.join(',') + '\r\n' + rows.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
-  await giveFile(blob, `antibodies_${stamp()}.csv`);
-};
+  await giveFile(blob, `antibodies${tag}_${stamp()}.csv`);
+}
 // Sauvegarde complète : champs + images (JPEG, ~10× plus léger que le PNG), dans un seul fichier .json à restaurer
 $('btnBackup').onclick = async () => {
   const recs = await DB.all(); if (!recs.length){ toast(t('csvNone')); return; }
@@ -836,6 +996,7 @@ const det = { bg: null, bgFrames: 0, occ: false, n: 0 };
 function setStatus(big, small, cls){ $('stBig').textContent = big; $('stSmall').textContent = small; $('stSmall').className = 'small' + (cls ? ' ' + cls : ''); }
 function setState(s, small){
   state = s; const [b, m] = I18N.en[s] ? t(s) : ['', '']; setStatus(b, small || m);
+  if (s !== 'scan' && typeof applyLast === 'function') applyLast();
   if (s !== 'scan' && s !== 'done'){ probe = null; band = null; drawBand(); }
   const zone = s === 'zone';
   updateLensBtn();

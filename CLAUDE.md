@@ -96,6 +96,15 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
   Maintenant `createImageBitmap(video, zone, taille ≤ 900 px)` (0,1 ms) est transféré au worker, une image sur quatre,
   une lecture à la fois. Ne jamais remettre de travail lourd sur le fil principal pendant le scan.
 - « Isotype: Armenian Hamster IgG » n'est pas un contrôle isotypique (seul « Isotype control » l'est). Valeurs en anglais.
+- **Confiance par champ (v0.21)** : 'code' (code 2D), 'sure' (3 lectures d'accord ; pour catalogue/lot/clone, mot lu à
+  confiance ≥ 80), 'unsure', 'missing'. Sur 7 étiquettes (46 champs) : 34 sûrs tous justes, les 8 erreurs parmi les
+  12 incertains. La confiance par caractère de Tesseract vaut toujours ~99 (inutile) ; `lstm_choice_mode` ne renvoie
+  pas d'alternatives en v7. `rec.conf` et `rec.auto` (valeurs lues) sont gardés ; `readingStats` compare `auto` aux
+  champs des scans vérifiés et affiche la fiabilité mesurée (registre, relecture). Test : sûrs 37/37 justes,
+  incertains 4/8.
+- **Relecture (v0.21)** : page plein écran, portrait si possible (`screen.orientation.lock('portrait')`, l'écran
+  « tournez le téléphone » est masqué) ; propose d'abord de valider d'un coup les scans entièrement sûrs, puis fait
+  défiler les autres, les plus douteux d'abord ; champs incertains en orange « ? », champs clés vides en pointillés.
 - Champs dans la fiche du scan (registre), modifiables, « Relire » relance la lecture sur l'image enregistrée.
   Bord vert = valeur lue dans le code 2D. Les bibliothèques viennent de jsDelivr : il faut du réseau à la 1re lecture.
 - Piste écartée pour l'instant (choix de l'utilisateur) : lecture par Claude (API payante, images envoyées) ;
@@ -103,13 +112,16 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
 
 ## Registre, export, sauvegarde (v0.19)
 
+- Carte « dernier anticorps » du panneau : vignette, marqueur · fluorochrome, Cat · Lot ; mise à jour seulement hors
+  scan (v0.21 : la lecture d'une fiole finissait pendant la rotation de la suivante et la carte changeait en plein scan).
 - Liste des scans (vignette, marqueur · fluorochrome, Cat · Lot · fabricant, date, badge vérifié / à vérifier /
   incomplet), avancée en tête (« N scans · C vérifiés · T à vérifier »), recherche dans les champs. Accessible aussi
   pendant le scan (bouton Registre du panneau) ; le panneau montre le dernier scan lu (un appui ouvre sa fiche).
 - Fiche : chaque modification est enregistrée 0,4 s après la frappe (et à la fermeture) ; « Vérifié ✓ » marque le scan
   vérifié (`checked`) ; « Rescanner » : le prochain scan terminé remplace celui-ci (`rescanId`), puis il est relu.
 - Export CSV (UTF-8 avec BOM pour Excel, virgules, tout entre guillemets) : id, date, marker, fluorochrome,
-  manufacturer, catalogue, lot, clone, expiry, gtin, code_2d, checked, incomplete_scan. Partage natif (Fichiers,
+  manufacturer, catalogue, lot, clone, expiry, code_2d, checked, complete_scan, source (v0.21 : plus de gtin,
+  « complete_scan » au lieu de « incomplete_scan »). « CSV : dernière session » : scans depuis la dernière pause d'1 h. Partage natif (Fichiers,
   e-mail) si possible, sinon téléchargement.
 - Sauvegarde : un .json avec champs + images en JPEG 0,85 (~60 Ko par scan) ; « Restaurer » ajoute les scans absents
   (même `date` = déjà là). `navigator.storage.persist()` demandé au démarrage ; la note dit si c'est accordé.

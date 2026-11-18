@@ -88,9 +88,36 @@ async function ocr(canvas){
   }
   // Trois lectures, l'image agrandie ×2, ×3 et ×4, puis vote par champ : chaque taille se trompe ailleurs (6 lu 8,
   // chiffre perdu). 6 étiquettes des vidéos, 42 champs : 33 à 35 justes pour une seule taille (×2 à ×5), 35 votés.
-  const texts = [];
-  for (const k of [2, 3, 4]){ const { data } = await worker.recognize(prepare(canvas, k)); texts.push(data.text || ''); }
-  return texts;
+  // Chaque lecture garde aussi ses mots et leur confiance (0–100), pour juger chaque champ.
+  const passes = [];
+  for (const k of [2, 3, 4]){
+    const { data } = await worker.recognize(prepare(canvas, k), {}, { text: true, blocks: true }), words = [];
+    for (const b of data.blocks || []) for (const p of b.paragraphs) for (const l of p.lines) for (const w of l.words) words.push({ t: norm(w.text), c: w.confidence });
+    passes.push({ text: data.text || '', words });
+  }
+  return passes;
+}
+const norm = s => String(s).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+/* Confiance de chaque champ : 'code' (lu dans le code 2D), 'sure', 'unsure' ou 'missing' (vide).
+   Sûr : les trois lectures donnent la même valeur et, pour les numéros (catalogue, lot, clone), le mot lu a une
+   confiance d'au moins 80. Sur 7 étiquettes des vidéos (46 champs), les 34 champs jugés sûrs étaient tous justes ; les
+   12 incertains contenaient les 8 erreurs (812798, 30-F1, RB8-8C5…). La confiance des mots ne sert que pour les
+   numéros : pour le marqueur, le fabricant ou la date, l'associer aux bons mots est trop hasardeux.
+   L'app mesure ensuite la vraie fiabilité sur les corrections de l'utilisateur (index.html, readingStats). */
+function confidence(passes, parsed, fields){
+  const out = {};
+  for (const k in fields){
+    const v = fields[k]; if (!v){ out[k] = 'missing'; continue; }
+    const agree = parsed.filter(p => p[k] === v).length;
+    let sure = agree === parsed.length && parsed.length >= 3;
+    if (sure && (k === 'cat' || k === 'lot' || k === 'clone')){
+      const t = norm(v); let c = 100;
+      parsed.forEach((p, i) => { const w = passes[i].words.filter(w => w.t.includes(t)); c = Math.min(c, w.length ? Math.max(...w.map(x => x.c)) : 0); });
+      sure = c >= 80;
+    }
+    out[k] = sure ? 'sure' : 'unsure';
+  }
+  return out;
 }
 // valeur la plus fréquente de chaque champ ; à égalité, celle de la lecture du milieu (×3)
 function vote(list){
@@ -188,17 +215,18 @@ function parseText(raw){
 // extra : codes déjà lus sur les images brutes pendant le scan (prioritaires)
 async function readLabel(canvas, extra = [], onStep = () => {}){
   const errors = [], fields = { marker: '', fluor: '', maker: '', cat: '', lot: '', clone: '', exp: '' };
-  let code = [...extra], texts = [];
+  let code = [...extra], passes = [];
   try { onStep('code'); for (const c of await readCode(canvas)) if (!code.some(o => o.text === c.text)) code.push(c); } catch (e){ errors.push(e.message); }
-  try { onStep('text'); texts = await ocr(canvas); } catch (e){ errors.push(e.message); }
-  const t = texts.length ? vote(texts.map(parseText)) : {}, text = texts[1] || texts[0] || '';
+  try { onStep('text'); passes = await ocr(canvas); } catch (e){ errors.push(e.message); }
+  const parsed = passes.map(p => parseText(p.text)), t = parsed.length ? vote(parsed) : {}, text = passes.length ? (passes[1] || passes[0]).text : '';
   for (const k in fields) if (t[k]) fields[k] = t[k];
+  const conf = confidence(passes, parsed, fields), fromCode = new Set();
   for (const c of code){
     const g = parseCode(c.text);
-    if (g.lot) fields.lot = g.lot;
-    if (g.exp) fields.exp = g.exp;
+    if (g.lot){ fields.lot = g.lot; fromCode.add('lot'); }
+    if (g.exp){ fields.exp = g.exp; fromCode.add('exp'); }
     // une réf. de code qui ressemble à un n° de catalogue (BioLegend) l'emporte ; (240) de BD (« 0303 ») ne sert qu'à défaut
-    if (g.ref && (!fields.cat || /^\d{5,8}$/.test(g.ref))) fields.cat = g.ref;
+    if (g.ref && (!fields.cat || /^\d{5,8}$/.test(g.ref))){ fields.cat = g.ref; if (/^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
     if (g.gtin) fields.gtin = g.gtin;
   }
   // Certains fabricants (BD) mettent le n° de catalogue dans le GTIN du code : 00382906127990 → 612799. Si le catalogue
@@ -209,9 +237,10 @@ async function readLabel(canvas, extra = [], onStep = () => {}){
       const sub = fields.gtin.slice(i, i + L); let d = 0; for (let k = 0; k < L; k++) if (sub[k] !== fields.cat[k]) d++;
       if (d >= 1 && d <= 2) near.push(sub);
     }
-    if (near.length === 1) fields.cat = near[0];
-  }
-  return { fields, code, text, errors };
+    if (near.length === 1){ fields.cat = near[0]; fromCode.add('cat'); }
+  } else if (fields.gtin && /^\d{4,}$/.test(fields.cat) && fields.gtin.includes(fields.cat)) fromCode.add('cat');
+  for (const k of fromCode) conf[k] = 'code';
+  return { fields, conf, code, text, errors };
 }
 
 window.LabelReader = { readLabel, parseText, parseGS1, parseCode, scanCode, prepare };
