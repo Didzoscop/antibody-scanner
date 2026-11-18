@@ -95,6 +95,13 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
   téléphone, et l'utilisateur a eu des étiquettes très mal assemblées (suivi décroché faute d'images traitées).
   Maintenant `createImageBitmap(video, zone, taille ≤ 900 px)` (0,1 ms) est transféré au worker, une image sur quatre,
   une lecture à la fois. Ne jamais remettre de travail lourd sur le fil principal pendant le scan.
+- **Tous les codes (v0.22)** : 1D et 2D (DataMatrix, QR, Aztec, PDF417, GS1-128, GS1 DataBar, EAN/UPC, Code 39…),
+  en direct (worker, jusqu'à 3 codes différents par fiole) et sur l'étiquette à plat. GS1 : chaque élément fait foi.
+  EAN/UPC/ITF-14 seul : GTIN (le catalogue BD s'y retrouve). Code sans étiquettes : chaque morceau (≥ 4 caractères) est
+  comparé au catalogue et au lot lus dans le texte (distance d'édition, confusions 6/8, 0/O, 1/I… à moitié prix) ; le
+  plus proche remplace la lecture s'il diffère d'au plus un tiers des caractères ; un champ que le texte n'a pas donné
+  est rempli par la règle « chiffres puis lettres » (BioLegend). 7 cas construits justes ; EAN-13 dessiné lu par le
+  worker. CSV : `barcode_info` (contenu) et `barcode_type` (format), `rec.codeFmt`.
 - « Isotype: Armenian Hamster IgG » n'est pas un contrôle isotypique (seul « Isotype control » l'est). Valeurs en anglais.
 - **Confiance par champ (v0.21)** : 'code' (code 2D), 'sure' (3 lectures d'accord ; pour catalogue/lot/clone, mot lu à
   confiance ≥ 80), 'unsure', 'missing'. Sur 7 étiquettes (46 champs) : 34 sûrs tous justes, les 8 erreurs parmi les
@@ -114,6 +121,8 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
 
 - Carte « dernier anticorps » du panneau : vignette, marqueur · fluorochrome, Cat · Lot ; mise à jour seulement hors
   scan (v0.21 : la lecture d'une fiole finissait pendant la rotation de la suivante et la carte changeait en plein scan).
+- **Page entière (v0.22)** au lieu d'un panneau latéral : commandes compactes dans une colonne à gauche (paysage) ou
+  en haut (portrait), liste sur toute la hauteur, en grille de cartes de 250 px.
 - Liste des scans (vignette, marqueur · fluorochrome, Cat · Lot · fabricant, date, badge vérifié / à vérifier /
   incomplet), avancée en tête (« N scans · C vérifiés · T à vérifier »), recherche dans les champs. Accessible aussi
   pendant le scan (bouton Registre du panneau) ; le panneau montre le dernier scan lu (un appui ouvre sa fiche).

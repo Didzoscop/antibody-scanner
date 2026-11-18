@@ -56,15 +56,33 @@ async function readCode(canvas){
 let zxingReady = false;
 async function scanCode(imageData){
   if (!zxingReady){ loadScript(ZXING).then(() => { zxingReady = true; }).catch(() => {}); return null; }
-  const r = await window.ZXingWASM.readBarcodes(imageData, { tryHarder: true, maxNumberOfSymbols: 1, textMode: 'HRI', formats: ['DataMatrix', 'QRCode', 'Aztec', 'PDF417'] });
-  return r.length && r[0].text && r[0].isValid !== false ? { text: r[0].text, format: r[0].format } : null;
+  // tous les formats (1D et 2D) : les fioles portent des DataMatrix, des QR, des GS1-128, des GS1 DataBar, des EAN…
+  const r = await window.ZXingWASM.readBarcodes(imageData, { tryHarder: true, maxNumberOfSymbols: 4, textMode: 'HRI' });
+  const b = r.filter(o => o.text && o.isValid !== false).map(o => ({ text: o.text, format: o.format }));
+  return b.length ? b : null;
 }
-// Contenu d'un code : GS1 (BD, Invitrogen…) ou « catalogue   lot » (BioLegend : « 126528   B350197 »)
+// Contenu d'un code : GS1 (BD, Invitrogen…), GTIN seul (EAN/UPC, ITF-14), ou « catalogue   lot » (BioLegend :
+// « 126528   B350197 »)
 function parseCode(text){
   if (/\(\d{2,4}\)/.test(text)) return parseGS1(text);
+  if (/^\d{12,14}$/.test(text.trim())) return { gtin: text.trim().padStart(14, '0') };
   const tok = text.trim().split(/\s+/);
   if (tok.length === 2 && /^\d{4,8}$/.test(tok[0]) && /^[A-Z0-9-]{4,}$/i.test(tok[1])) return { ref: tok[0], lot: tok[1] };
   return {};
+}
+// Morceaux d'un code sans étiquettes (« 126528   B350197 », « 126528/B350197 »…) : candidats catalogue ou lot
+const codeTokens = text => [...new Set(String(text).split(/[^A-Za-z0-9-]+/).map(t => t.replace(/^-+|-+$/g, '')).filter(t => t.length >= 4))];
+// Distance entre deux numéros, les confusions de lecture (6/8, 0/O, 1/I, 5/S…) comptent pour moitié
+const LOOKALIKE = ['68', '0OQD', '1IL7', '5S', '2Z', '8B', '6G', '9g'];
+function dist(a, b){
+  a = a.toUpperCase(); b = b.toUpperCase();
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++){
+    const x = a[i - 1], y = b[j - 1], sub = x === y ? 0 : LOOKALIKE.some(g => g.includes(x) && g.includes(y)) ? .5 : 1;
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + sub);
+  }
+  return d[a.length][b.length];
 }
 // éléments GS1 : « (01)00382906127990(10)3079093(17)251031 »
 const GS1 = { '01': 'gtin', '10': 'lot', '17': 'exp', '11': 'made', '21': 'serial', '240': 'ref', '241': 'ref' };
@@ -221,12 +239,27 @@ async function readLabel(canvas, extra = [], onStep = () => {}){
   const parsed = passes.map(p => parseText(p.text)), t = parsed.length ? vote(parsed) : {}, text = passes.length ? (passes[1] || passes[0]).text : '';
   for (const k in fields) if (t[k]) fields[k] = t[k];
   const conf = confidence(passes, parsed, fields), fromCode = new Set();
+  // Codes sans étiquettes : chaque morceau est comparé au catalogue et au lot lus dans le texte ; le plus proche
+  // remplace la lecture (le code ne se trompe pas), dans la limite d'un tiers de caractères différents.
+  const used = new Set();
+  for (const k of ['cat', 'lot']){
+    const v = fields[k]; if (!v) continue;
+    let best = null, bd = Infinity;
+    for (const c of code){ if (/\(\d{2,4}\)/.test(c.text)) continue; for (const tk of codeTokens(c.text)){ if (used.has(tk)) continue; const dd = dist(v, tk); if (dd < bd){ bd = dd; best = tk; } } }
+    if (best && bd <= Math.max(1, Math.floor(v.length / 3)) && Math.abs(best.length - v.length) <= 1){ fields[k] = best; used.add(best); fromCode.add(k); }
+  }
   for (const c of code){
     const g = parseCode(c.text);
-    if (g.lot){ fields.lot = g.lot; fromCode.add('lot'); }
-    if (g.exp){ fields.exp = g.exp; fromCode.add('exp'); }
-    // une réf. de code qui ressemble à un n° de catalogue (BioLegend) l'emporte ; (240) de BD (« 0303 ») ne sert qu'à défaut
-    if (g.ref && (!fields.cat || /^\d{5,8}$/.test(g.ref))){ fields.cat = g.ref; if (/^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
+    const gs1 = /\(\d{2,4}\)/.test(c.text);
+    if (gs1){   // GS1 : chaque élément dit ce qu'il est, il fait foi
+      if (g.lot){ fields.lot = g.lot; fromCode.add('lot'); }
+      if (g.exp){ fields.exp = g.exp; fromCode.add('exp'); }
+      // (240) de BD (« 0303 ») ne ressemble pas à un n° de catalogue : il ne sert qu'à défaut
+      if (g.ref && (!fields.cat || /^\d{5,8}$/.test(g.ref))){ fields.cat = g.ref; if (/^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
+    } else {   // sans étiquettes : seulement pour un champ que le texte n'a pas donné (« catalogue   lot » de BioLegend)
+      if (g.lot && !fields.lot && !used.has(g.lot)){ fields.lot = g.lot; fromCode.add('lot'); }
+      if (g.ref && !fields.cat && !used.has(g.ref)){ fields.cat = g.ref; fromCode.add('cat'); }
+    }
     if (g.gtin) fields.gtin = g.gtin;
   }
   // Certains fabricants (BD) mettent le n° de catalogue dans le GTIN du code : 00382906127990 → 612799. Si le catalogue

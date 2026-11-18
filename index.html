@@ -179,20 +179,35 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 .view .col{display:flex;flex-direction:column;gap:.7rem;padding:0 var(--b) var(--b) 0;min-width:9rem;max-width:22rem}
 .view .row{display:flex;flex-wrap:wrap;gap:.5rem}
 .fields{display:flex;flex-direction:column;gap:.35rem}
-/* registre : liste des scans */
-.regbar{display:flex;flex-direction:column;gap:.5rem;padding:.6rem 1rem;border-bottom:3px solid var(--ink)}
-.regbar .row{display:flex;flex-wrap:wrap;gap:.5rem;padding:0 var(--b) var(--b) 0}
-.regbar .btn{flex:1;min-height:38px;font-size:.85rem;padding:.2rem .5rem}
-.regstat{margin:0;font-weight:600}
-.regbar input[type=search]{border:2px solid var(--ink);background:var(--paper);padding:.3rem .5rem;font-size:16px;border-radius:0;width:100%}
-.regbar .note{margin:0;font-size:.78rem;color:var(--muted)}
-.reglist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem}
-.rrow{display:grid;grid-template-columns:64px 1fr;gap:.6rem;width:100%;text-align:left;border:var(--b) solid var(--ink);background:var(--paper);padding:.35rem;align-items:center}
-.rrow img{width:64px;height:64px;object-fit:cover;background:#000;display:block}
-.rrow .noimg{width:64px;height:64px;display:grid;place-items:center;border:2px dashed var(--muted);color:var(--muted);font-size:1.6rem}
+/* registre : page entière */
+.regpage{position:fixed;inset:0;z-index:30;background:var(--bg);display:none;grid-template-columns:clamp(200px,24vw,280px) 1fr;
+  padding:.6rem calc(.6rem + var(--sr)) .6rem calc(.6rem + var(--sl));gap:.8rem}
+.regpage.open{display:grid}
+.rp-side{display:flex;flex-direction:column;gap:.5rem;min-height:0;overflow:auto;padding:0 var(--b) var(--b) 0}
+.rp-title{display:flex;align-items:center;gap:.5rem}
+.rp-title h2{margin:0 auto 0 0;font-size:1.1rem;text-transform:uppercase;letter-spacing:.06em}
+.btn.sm{min-height:30px;padding:.1rem .45rem;font-size:.72rem;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:2px 2px 0 var(--ink)}
+.rp-actions{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.rp-actions .primary{grid-column:1/-1}
+.regstat{margin:0;font-weight:600;font-size:.8rem}
+.regpage input[type=search]{border:2px solid var(--ink);background:var(--paper);padding:.25rem .5rem;font-size:16px;border-radius:0;width:100%}
+.regpage .note{margin:0;font-size:.72rem;color:var(--muted);line-height:1.3}
+.reglist{list-style:none;margin:0;padding:0 var(--b) var(--b) 0;min-height:0;overflow:auto;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem;align-content:start}
+/* portrait : commandes compactes en haut, liste dessous */
+@media (orientation:portrait){
+  .regpage{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .rp-actions{grid-template-columns:repeat(3,1fr)}
+  .rp-side{max-height:46vh}
+}
+@media (max-height:420px){.regpage .note{display:none}}
+.rrow{display:grid;grid-template-columns:56px 1fr;gap:.55rem;width:100%;text-align:left;border:var(--b) solid var(--ink);background:var(--paper);padding:.35rem;align-items:center}
+.rrow img{width:56px;height:56px;object-fit:cover;background:#000;display:block}
+.rrow .noimg{width:56px;height:56px;display:grid;place-items:center;border:2px dashed var(--muted);color:var(--muted);font-size:1.6rem}
 .view.noimg img,.view.noimg #viewDl{display:none}
-.rrow b{display:block;font-size:.95rem;line-height:1.2}
-.rrow span{display:block;font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.3}
+.rrow b{display:block;font-size:.85rem;line-height:1.15}
+.rrow span{display:block;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow > div{min-width:0}
 .badge{display:inline-block;font-size:.72rem;padding:0 .35rem;border:2px solid currentColor;margin-left:.3rem}
 .badge.ok{color:var(--ok)}.badge.todo{color:var(--wait)}.badge.bad{color:var(--err)}
 .panel .last{border:2px solid var(--ink);background:var(--bg);text-align:left;padding:.3rem .45rem;font-size:.85rem;line-height:1.25}
@@ -312,25 +327,27 @@ body.reviewing .rotate{display:none!important}
     <div class="row"><label class="btn"><span data-i18n="testBtn"></span><input id="file" type="file" accept="video/*" hidden></label></div>
   </div>
 </aside>
-<aside class="sheet" id="sheetRegister" data-i18n-aria="register">
-  <div class="sheet-head"><h2 data-i18n="register"></h2><button class="btn" type="button" data-close data-i18n="close"></button></div>
-  <div class="regbar">
+<!-- Registre : page entière. Commandes dans une colonne étroite (paysage) ou en haut (portrait), liste sur toute la
+     hauteur restante, en plusieurs colonnes si la place le permet. -->
+<section class="regpage" id="sheetRegister" data-i18n-aria="register">
+  <div class="rp-side">
+    <div class="rp-title"><h2 data-i18n="register"></h2><button class="btn sm" type="button" data-close data-i18n="close"></button></div>
     <p class="regstat" id="regStat"></p>
     <input type="search" id="regSearch" data-i18n-ph="search" autocomplete="off">
-    <div class="row">
-      <button class="btn" id="btnAdd" type="button" data-i18n="addManual"></button>
-      <button class="btn primary" id="btnReview" type="button"></button>
-      <button class="btn" id="btnCsvLast" type="button"></button>
-      <button class="btn" id="btnCsv" type="button" data-i18n="exportCsv"></button>
-      <button class="btn" id="btnBackup" type="button" data-i18n="backup"></button>
-      <button class="btn" id="btnRestore" type="button" data-i18n="restore"></button>
+    <div class="rp-actions">
+      <button class="btn sm primary" id="btnReview" type="button"></button>
+      <button class="btn sm" id="btnAdd" type="button" data-i18n="addManual"></button>
+      <button class="btn sm" id="btnCsvLast" type="button"></button>
+      <button class="btn sm" id="btnCsv" type="button" data-i18n="exportCsv"></button>
+      <button class="btn sm" id="btnBackup" type="button" data-i18n="backup"></button>
+      <button class="btn sm" id="btnRestore" type="button" data-i18n="restore"></button>
       <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     </div>
     <p class="note" id="statNote"></p>
     <p class="note" id="storeNote"></p>
   </div>
-  <div class="sheet-body"><ul class="reglist" id="regList"></ul></div>
-</aside>
+  <ul class="reglist" id="regList"></ul>
+</section>
 
 <dialog class="pix" id="viewDlg">
   <h2 id="viewTitle"></h2>
@@ -379,7 +396,7 @@ body.reviewing .rotate{display:none!important}
 <script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.21';
+const VERSION = 'v0.22';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -402,18 +419,18 @@ const I18N = {
     test: 'Test', testNote: 'Replays a recorded video as if it were the camera (no holder detection).', testBtn: 'Test with a video',
     regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
     f_marker: 'Marker', f_fluor: 'Fluorochrome', f_maker: 'Manufacturer', f_cat: 'Catalogue no.', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Expiry',
-    review: 'Review ({n})', reviewNone: 'Nothing to review', csvLast: 'CSV: last session ({n})', prev: '◀ Back', skip: 'Skip', okNext: 'Correct ✓ next',
+    review: 'Review ({n})', reviewNone: 'Nothing to review', csvLast: 'CSV · session ({n})', prev: '◀ Back', skip: 'Skip', okNext: 'Correct ✓ next',
     rvPos: '{i} / {n} to check', rvDone: 'All scans are checked.', confirmSure: 'Confirm the {n} scans read with confidence?',
     statSure: 'Sure readings: {p} % right ({n} fields checked).', statUnsure: 'Uncertain: {p} % right ({n}).', statNone: 'Reliability: measured as you check scans.',
     lastReading: 'Reading…',
-    addManual: '+ Add manually', manual: 'manual entry', newEntry: 'New antibody', scanIt: 'Scan this vial',
-    search: 'Search (marker, lot, cat…)', exportCsv: 'Export CSV', backup: 'Backup', restore: 'Restore',
+    addManual: '+ Add', manual: 'manual entry', newEntry: 'New antibody', scanIt: 'Scan this vial',
+    search: 'Search (marker, lot, cat…)', exportCsv: 'CSV · all', backup: 'Backup', restore: 'Restore',
     regStat: '{n} scans · {c} checked · {t} to check', regStatRead: ' · {r} reading', unread: 'Not read yet', st_ok: 'checked', st_todo: 'to check', st_part: 'incomplete',
     markChecked: 'Checked ✓', rescan: 'Rescan', rescanOn: 'Rescan: the next scan replaces “{s}”.', rescanDone: 'Scan replaced', last: 'Last: {s}',
     storeOk: 'Scans are saved on this phone after each vial; the browser will not clear them.', storeRisk: 'Scans are saved on this phone after each vial. Make a Backup from time to time: the browser may clear its data if storage runs low.',
     csvNone: 'No scans to export.', backupDone: 'Backup ready', restored: '{n} scans restored ({d} already there)', restoreFail: 'Could not restore: ',
     reading: 'Reading the label…', readFail: 'Could not read the label: ', reread: 'Read again', saveFields: 'Save fields', fieldsSaved: 'Fields saved',
-    readDone: 'Read: {s}', fromCode: 'from the 2D code', checkFields: 'Automatic reading: check before relying on it.',
+    readDone: 'Read: {s}', fromCode: 'read from a barcode', checkFields: 'Automatic reading: check before relying on it.',
     viewTitle: 'Scan of {d}', save: 'Save', del: 'Delete', delAsk: 'Delete this scan?', alt: 'Unrolled label', file: 'label',
     run: 'Run scan', stop: 'Stop', starting: 'Starting…', camFail: 'Camera unavailable', https: ' (the page must be opened over https)',
     zone: ['Scan zone', 'Empty holder: drag the frame onto the holder window (move, corners, pinch), then run the scan. It can be wider than the vial: the app measures the vial and picks the strip to use.'],
@@ -444,18 +461,18 @@ const I18N = {
     test: 'Test', testNote: "Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).", testBtn: 'Tester avec une vidéo',
     regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
     f_marker: 'Marqueur', f_fluor: 'Fluorochrome', f_maker: 'Fabricant', f_cat: 'N° catalogue', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Péremption',
-    review: 'Relecture ({n})', reviewNone: 'Rien à relire', csvLast: 'CSV : dernière session ({n})', prev: '◀ Retour', skip: 'Passer', okNext: 'Juste ✓ suivant',
+    review: 'Relecture ({n})', reviewNone: 'Rien à relire', csvLast: 'CSV · session ({n})', prev: '◀ Retour', skip: 'Passer', okNext: 'Juste ✓ suivant',
     rvPos: '{i} / {n} à vérifier', rvDone: 'Tous les scans sont vérifiés.', confirmSure: 'Valider les {n} scans lus avec certitude ?',
     statSure: 'Lectures sûres : {p} % justes ({n} champs vérifiés).', statUnsure: 'Incertaines : {p} % justes ({n}).', statNone: 'Fiabilité : mesurée au fil de vos vérifications.',
     lastReading: 'Lecture…',
-    addManual: '+ Ajouter à la main', manual: 'saisie manuelle', newEntry: 'Nouvel anticorps', scanIt: 'Scanner cette fiole',
-    search: 'Rechercher (marqueur, lot, cat…)', exportCsv: 'Export CSV', backup: 'Sauvegarde', restore: 'Restaurer',
+    addManual: '+ Ajouter', manual: 'saisie manuelle', newEntry: 'Nouvel anticorps', scanIt: 'Scanner cette fiole',
+    search: 'Rechercher (marqueur, lot, cat…)', exportCsv: 'CSV · tout', backup: 'Sauvegarde', restore: 'Restaurer',
     regStat: '{n} scans · {c} vérifiés · {t} à vérifier', regStatRead: ' · {r} en lecture', unread: 'Pas encore lu', st_ok: 'vérifié', st_todo: 'à vérifier', st_part: 'incomplet',
     markChecked: 'Vérifié ✓', rescan: 'Rescanner', rescanOn: 'Rescan : le prochain scan remplace « {s} ».', rescanDone: 'Scan remplacé', last: 'Dernier : {s}',
     storeOk: "Les scans sont enregistrés sur ce téléphone après chaque fiole ; le navigateur ne les effacera pas.", storeRisk: "Les scans sont enregistrés sur ce téléphone après chaque fiole. Faites une Sauvegarde de temps en temps : le navigateur peut effacer ses données s'il manque de place.",
     csvNone: 'Aucun scan à exporter.', backupDone: 'Sauvegarde prête', restored: '{n} scans restaurés ({d} déjà présents)', restoreFail: 'Restauration impossible : ',
     reading: "Lecture de l'étiquette…", readFail: "Lecture de l'étiquette impossible : ", reread: 'Relire', saveFields: 'Enregistrer les champs', fieldsSaved: 'Champs enregistrés',
-    readDone: 'Lu : {s}', fromCode: 'lu dans le code 2D', checkFields: 'Lecture automatique : à vérifier avant de s’y fier.',
+    readDone: 'Lu : {s}', fromCode: 'lu dans un code-barres', checkFields: 'Lecture automatique : à vérifier avant de s’y fier.',
     viewTitle: 'Scan du {d}', save: 'Enregistrer', del: 'Supprimer', delAsk: 'Supprimer ce scan ?', alt: 'Étiquette déroulée', file: 'etiquette',
     run: 'Lancer le scan', stop: 'Stop', starting: 'Démarrage…', camFail: 'Caméra inaccessible', https: ' (la page doit être ouverte en https)',
     zone: ['Zone de scan', "Socle vide : placez le cadre sur la fenêtre du socle (glisser, coins, pincer), puis lancez le scan. Il peut déborder de la fiole : l'app mesure la fiole et choisit elle-même la bande à utiliser."],
@@ -507,8 +524,8 @@ $('autoNext').checked = prefs.autoNext;
 $('autoNext').onchange = e => { prefs.autoNext = e.target.checked; savePrefs(); };
 
 /* ---------- Panneaux ---------- */
-function openSheet(id){ $(id).classList.add('open'); $('scrim').classList.add('open'); if (id === 'sheetRegister') renderRegister(); }
-function closeSheets(){ document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); $('scrim').classList.remove('open'); }
+function openSheet(id){ $(id).classList.add('open'); if (id === 'sheetRegister') renderRegister(); else $('scrim').classList.add('open'); }
+function closeSheets(){ document.querySelectorAll('.sheet,.regpage').forEach(s => s.classList.remove('open')); $('scrim').classList.remove('open'); }
 $('scrim').onclick = closeSheets;
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
 $('btnSettings').onclick = () => openSheet('sheetSettings');
@@ -583,14 +600,14 @@ async function readInto(id, canvas, codes = []){
   try {
     if (!canvas){ const r = await DB.get(id); canvas = await blobCanvas(r.blob); }
     // « Relire » : les codes déjà lus pendant le scan sont gardés
-    if (!codes.length){ const r = await DB.get(id); codes = (r.code || []).map(text => ({ text })); }
+    if (!codes.length){ const r = await DB.get(id); codes = (r.code || []).map((text, i) => ({ text, format: (r.codeFmt || [])[i] || '' })); }
     const res = await LabelReader.readLabel(canvas, codes);
     const rec = await DB.get(id); if (!rec) return;
     if (rec.manual && rec.fields){   // saisie manuelle puis scannée : ce qui a été tapé l'emporte
       const typed = Object.fromEntries(Object.entries(rec.fields).filter(([, v]) => v));
       rec.fields = { ...res.fields, ...typed };
     } else { rec.fields = res.fields; rec.edited = false; rec.checked = false; }
-    rec.code = res.code.map(c => c.text); rec.ocr = res.text; rec.read = true;
+    rec.code = res.code.map(c => c.text); rec.codeFmt = res.code.map(c => c.format || ''); rec.ocr = res.text; rec.read = true;
     // confiance de chaque champ, et ce que l'app avait lu : comparé à la version vérifiée, ça mesure sa fiabilité
     rec.conf = res.conf; rec.auto = { ...res.fields };
     await DB.put(rec);
@@ -647,7 +664,8 @@ function statText(recs){
 function fillFields(r){
   const f = r.fields || {}, form = $('fields'), busy = readingIds.has(r.id), fromCode = new Set();
   // champs confirmés par le code 2D (bord vert)
-  for (const c of r.code || []){ const g = LabelReader.parseCode(c); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); if (g.ref && /^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
+  if (r.conf) for (const k of FIELDS){ if (r.conf[k] === 'code') fromCode.add(k); }
+  else for (const c of r.code || []){ const g = LabelReader.parseCode(c); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); if (g.ref && /^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
   for (const k of FIELDS){ const el = form.elements[k]; el.value = f[k] || ''; el.classList.toggle('code', fromCode.has(k)); el.title = fromCode.has(k) ? t('fromCode') : ''; }
   markConf(form, r);
   $('fieldsNote').textContent = busy ? t('reading') : r.fields && !isChecked(r) && !(r.manual && !r.blob) ? t('checkFields') : '';
@@ -794,11 +812,11 @@ $('btnCsv').onclick = async () => exportCsv(await DB.all(), '');
 $('btnCsvLast').onclick = async () => exportCsv(lastSession(await DB.all()), '_session');
 async function exportCsv(recs, tag){
   if (!recs.length){ toast(t('csvNone')); return; }
-  const cols = ['id', 'date', 'marker', 'fluorochrome', 'manufacturer', 'catalogue', 'lot', 'clone', 'expiry', 'code_2d', 'checked', 'complete_scan', 'source'];
+  const cols = ['id', 'date', 'marker', 'fluorochrome', 'manufacturer', 'catalogue', 'lot', 'clone', 'expiry', 'barcode_info', 'barcode_type', 'checked', 'complete_scan', 'source'];
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const iso = d => { const x = new Date(d), p = n => String(n).padStart(2, '0'); return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())} ${p(x.getHours())}:${p(x.getMinutes())}`; };
   const rows = recs.map(r => { const f = r.fields || {};
-    return [r.id, iso(r.date), f.marker, f.fluor, f.maker, f.cat, f.lot, f.clone, f.exp, (r.code || []).join(' | '), isChecked(r) ? 'yes' : 'no', r.partial ? 'no' : 'yes', r.manual && !r.blob ? 'manual' : 'scan'].map(q).join(','); });
+    return [r.id, iso(r.date), f.marker, f.fluor, f.maker, f.cat, f.lot, f.clone, f.exp, (r.code || []).join(' | '), (r.codeFmt || []).join(' | '), isChecked(r) ? 'yes' : 'no', r.partial ? 'no' : 'yes', r.manual && !r.blob ? 'manual' : 'scan'].map(q).join(','); });
   // BOM : Excel ouvre alors le fichier en UTF-8 (µ, α, ®)
   const blob = new Blob(['﻿' + cols.join(',') + '\r\n' + rows.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
   await giveFile(blob, `antibodies${tag}_${stamp()}.csv`);
@@ -1125,7 +1143,7 @@ function detect(g){ // renvoie true/false une fois l'état stable (6 images de s
   return det.occ;
 }
 
-/* Code 2D lu en direct sur les images brutes, en pleine résolution, pendant le scan : sur l'étiquette à plat il est
+/* Codes (1D et 2D) lus en direct sur les images brutes, en pleine résolution, pendant le scan : sur l'étiquette à plat il est
    souvent coupé (jonction) ou déformé. La lecture se fait dans un fil à part (code-worker.js) : sur le fil principal
    (v0.16), elle ralentissait le traitement des images sur téléphone et le suivi décrochait. Une seule lecture à la fois,
    pas plus d'une image sur quatre, jusqu'à ce qu'un code soit lu. Sans Worker ni OffscreenCanvas : pas de lecture en
@@ -1133,10 +1151,14 @@ function detect(g){ // renvoie true/false une fois l'état stable (6 images de s
 let liveCodes = [], codeBusy = false, codeTick = 0, codeWorker = null;
 const CAN_LIVE_CODE = typeof Worker === 'function' && typeof OffscreenCanvas === 'function' && typeof createImageBitmap === 'function';
 function liveCode(){
-  if (!CAN_LIVE_CODE || codeBusy || liveCodes.length || !crop || ++codeTick % 4) return;
+  // une fiole peut porter plusieurs codes (un 2D et un 1D) : on continue jusqu'à 3 codes différents
+  if (!CAN_LIVE_CODE || codeBusy || liveCodes.length >= 3 || !crop || ++codeTick % 4) return;
   if (!codeWorker){
     try { codeWorker = new Worker('code-worker.js'); } catch (e){ return; }
-    codeWorker.onmessage = e => { codeBusy = false; if (e.data && e.data.text && state === 'scan') liveCodes.push({ text: e.data.text, format: e.data.format }); };
+    codeWorker.onmessage = e => {
+      codeBusy = false; if (state !== 'scan') return;
+      for (const c of (e.data && e.data.codes) || []) if (!liveCodes.some(o => o.text === c.text)) liveCodes.push(c);
+    };
     codeWorker.onerror = () => { codeBusy = false; };
   }
   codeBusy = true;
