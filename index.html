@@ -189,6 +189,8 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 .reglist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem}
 .rrow{display:grid;grid-template-columns:64px 1fr;gap:.6rem;width:100%;text-align:left;border:var(--b) solid var(--ink);background:var(--paper);padding:.35rem;align-items:center}
 .rrow img{width:64px;height:64px;object-fit:cover;background:#000;display:block}
+.rrow .noimg{width:64px;height:64px;display:grid;place-items:center;border:2px dashed var(--muted);color:var(--muted);font-size:1.6rem}
+.view.noimg img,.view.noimg #viewDl{display:none}
 .rrow b{display:block;font-size:.95rem;line-height:1.2}
 .rrow span{display:block;font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.3}
 .badge{display:inline-block;font-size:.72rem;padding:0 .35rem;border:2px solid currentColor;margin-left:.3rem}
@@ -298,6 +300,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
     <p class="regstat" id="regStat"></p>
     <input type="search" id="regSearch" data-i18n-ph="search" autocomplete="off">
     <div class="row">
+      <button class="btn" id="btnAdd" type="button" data-i18n="addManual"></button>
       <button class="btn" id="btnCsv" type="button" data-i18n="exportCsv"></button>
       <button class="btn" id="btnBackup" type="button" data-i18n="backup"></button>
       <button class="btn" id="btnRestore" type="button" data-i18n="restore"></button>
@@ -337,7 +340,7 @@ dialog.pix h2{margin:0 0 .5rem;font-size:1.2rem;text-transform:uppercase;letter-
 <script src="reader.js"></script>
 <script>
 'use strict';
-const VERSION = 'v0.19';
+const VERSION = 'v0.20';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const video = $('video'), cam = $('cam'), roiEl = $('roi');
@@ -360,6 +363,7 @@ const I18N = {
     test: 'Test', testNote: 'Replays a recorded video as if it were the camera (no holder detection).', testBtn: 'Test with a video',
     regNone: 'No scans yet.', regFail: 'Register unavailable in this browser.',
     f_marker: 'Marker', f_fluor: 'Fluorochrome', f_maker: 'Manufacturer', f_cat: 'Catalogue no.', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Expiry',
+    addManual: '+ Add manually', manual: 'manual entry', newEntry: 'New antibody', scanIt: 'Scan this vial',
     search: 'Search (marker, lot, cat…)', exportCsv: 'Export CSV', backup: 'Backup', restore: 'Restore',
     regStat: '{n} scans · {c} checked · {t} to check', regStatRead: ' · {r} reading', unread: 'Not read yet', st_ok: 'checked', st_todo: 'to check', st_part: 'incomplete',
     markChecked: 'Checked ✓', rescan: 'Rescan', rescanOn: 'Rescan: the next scan replaces “{s}”.', rescanDone: 'Scan replaced', last: 'Last: {s}',
@@ -397,6 +401,7 @@ const I18N = {
     test: 'Test', testNote: "Rejoue une vidéo enregistrée comme si c'était la caméra (sans détection du socle).", testBtn: 'Tester avec une vidéo',
     regNone: "Aucun scan pour l'instant.", regFail: 'Registre indisponible sur ce navigateur.',
     f_marker: 'Marqueur', f_fluor: 'Fluorochrome', f_maker: 'Fabricant', f_cat: 'N° catalogue', f_lot: 'Lot', f_clone: 'Clone', f_exp: 'Péremption',
+    addManual: '+ Ajouter à la main', manual: 'saisie manuelle', newEntry: 'Nouvel anticorps', scanIt: 'Scanner cette fiole',
     search: 'Rechercher (marqueur, lot, cat…)', exportCsv: 'Export CSV', backup: 'Sauvegarde', restore: 'Restaurer',
     regStat: '{n} scans · {c} vérifiés · {t} à vérifier', regStatRead: ' · {r} en lecture', unread: 'Pas encore lu', st_ok: 'vérifié', st_todo: 'à vérifier', st_part: 'incomplet',
     markChecked: 'Vérifié ✓', rescan: 'Rescanner', rescanOn: 'Rescan : le prochain scan remplace « {s} ».', rescanDone: 'Scan remplacé', last: 'Dernier : {s}',
@@ -499,16 +504,17 @@ async function renderRegister(){
   for (const r of recs.reverse()){
     const f = r.fields || {};
     if (q && !Object.values(f).join(' ').toLowerCase().includes(q)) continue;
-    const u = URL.createObjectURL(r.blob); urls.push(u);
+    const u = r.blob ? URL.createObjectURL(r.blob) : ''; if (u) urls.push(u);
     const li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.className = 'rrow';
-    b.innerHTML = '<img alt="" loading="lazy"><div><b></b><span class="l2"></span><span class="l3"></span></div>';
-    b.querySelector('img').src = u;
-    b.querySelector('b').textContent = label(r) || (readingIds.has(r.id) ? t('reading') : t('unread'));
+    b.innerHTML = (u ? '<img alt="" loading="lazy">' : '<i class="noimg" aria-hidden="true">✎</i>') + '<div><b></b><span class="l2"></span><span class="l3"></span></div>';
+    if (u) b.querySelector('img').src = u;
+    b.querySelector('b').textContent = label(r) || (r.manual ? t('newEntry') : readingIds.has(r.id) ? t('reading') : t('unread'));
     b.querySelector('.l2').textContent = [f.cat && 'Cat ' + f.cat, f.lot && 'Lot ' + f.lot, f.maker].filter(Boolean).join(' · ');
     const l3 = b.querySelector('.l3'); l3.textContent = fmtDate(r.date);
     const st = document.createElement('i'); st.className = 'badge ' + (r.partial ? 'bad' : isChecked(r) ? 'ok' : 'todo');
     st.textContent = t(r.partial ? 'st_part' : isChecked(r) ? 'st_ok' : 'st_todo'); l3.appendChild(st);
+    if (r.manual && !r.blob){ const m = document.createElement('i'); m.className = 'badge'; m.textContent = t('manual'); l3.appendChild(m); }
     b.onclick = () => openScan(r, u);
     li.appendChild(b); list.appendChild(li);
   }
@@ -521,6 +527,7 @@ const FIELDS = ['marker', 'fluor', 'maker', 'cat', 'lot', 'clone', 'exp'];
 let viewing = null, readingIds = new Set();
 async function readInto(id, canvas, codes = []){
   if (!window.LabelReader || readingIds.has(id)) return;
+  if (!canvas){ const r0 = await DB.get(id); if (!r0 || !r0.blob) return; }   // saisie manuelle : pas d'image à lire
   readingIds.add(id); if (viewing && viewing.id === id) fillFields(viewing); renderRegister();
   try {
     if (!canvas){ const r = await DB.get(id); canvas = await blobCanvas(r.blob); }
@@ -528,7 +535,11 @@ async function readInto(id, canvas, codes = []){
     if (!codes.length){ const r = await DB.get(id); codes = (r.code || []).map(text => ({ text })); }
     const res = await LabelReader.readLabel(canvas, codes);
     const rec = await DB.get(id); if (!rec) return;
-    rec.fields = res.fields; rec.code = res.code.map(c => c.text); rec.ocr = res.text; rec.edited = false; rec.checked = false; rec.read = true;
+    if (rec.manual && rec.fields){   // saisie manuelle puis scannée : ce qui a été tapé l'emporte
+      const typed = Object.fromEntries(Object.entries(rec.fields).filter(([, v]) => v));
+      rec.fields = { ...res.fields, ...typed };
+    } else { rec.fields = res.fields; rec.edited = false; rec.checked = false; }
+    rec.code = res.code.map(c => c.text); rec.ocr = res.text; rec.read = true;
     await DB.put(rec);
     if (viewing && viewing.id === id){ viewing = rec; }
     const sum = [res.fields.marker, res.fields.fluor, res.fields.lot && 'Lot ' + res.fields.lot].filter(Boolean).join(' · ');
@@ -541,7 +552,7 @@ async function readInto(id, canvas, codes = []){
 async function readPending(){
   if (!window.LabelReader) return;
   let recs = []; try { recs = await DB.all(); } catch (e){ return; }
-  for (const r of recs) if (!r.read && !r.fields && !r.partial) await readInto(r.id);
+  for (const r of recs) if (!r.read && !r.fields && !r.partial && r.blob) await readInto(r.id);
 }
 function blobCanvas(blob){
   return new Promise((ok, ko) => { const im = new Image(), u = URL.createObjectURL(blob);
@@ -553,7 +564,7 @@ function fillFields(r){
   // champs confirmés par le code 2D (bord vert)
   for (const c of r.code || []){ const g = LabelReader.parseCode(c); if (g.lot) fromCode.add('lot'); if (g.exp) fromCode.add('exp'); if (g.ref && /^\d{5,8}$/.test(g.ref)) fromCode.add('cat'); }
   for (const k of FIELDS){ const el = form.elements[k]; el.value = f[k] || ''; el.classList.toggle('code', fromCode.has(k)); el.title = fromCode.has(k) ? t('fromCode') : ''; }
-  $('fieldsNote').textContent = busy ? t('reading') : r.fields && !isChecked(r) ? t('checkFields') : '';
+  $('fieldsNote').textContent = busy ? t('reading') : r.fields && !isChecked(r) && !(r.manual && !r.blob) ? t('checkFields') : '';
   $('btnReread').disabled = busy;
   $('btnChecked').classList.toggle('primary', !isChecked(r));
 }
@@ -581,20 +592,35 @@ $('btnRescan').onclick = async () => {
 };
 function openScan(r, u){
   viewing = r; fillFields(r);
-  $('viewTitle').textContent = t('viewTitle', { d: fmtDate(r.date) }); $('viewImg').src = u; $('viewDl').href = u; $('viewDl').download = fileName(r.date);
+  // saisie manuelle sans image : pas d'image, ni « Relire » ; « Rescanner » devient « Scanner cette fiole »
+  document.querySelector('.view').classList.toggle('noimg', !u);
+  $('btnReread').classList.toggle('hidden', !u); $('btnRescan').textContent = t(u ? 'rescan' : 'scanIt');
+  $('viewTitle').textContent = u ? t('viewTitle', { d: fmtDate(r.date) }) : t('newEntry'); $('viewImg').src = u || ''; $('viewDl').href = u || '#'; $('viewDl').download = fileName(r.date);
   $('viewDel').onclick = async () => { if (!confirm(t('delAsk'))) return; await DB.del(r.id); $('viewDlg').close(); renderRegister(); };
   $('viewDlg').showModal();
 }
 $('viewClose').onclick = () => $('viewDlg').close();
-$('viewDlg').addEventListener('close', () => { clearTimeout(saveTimer); if (viewing) saveFields(false); viewing = null; });
+$('viewDlg').addEventListener('close', async () => {
+  clearTimeout(saveTimer); const v = viewing; viewing = null; if (!v) return;
+  const f = $('fields').elements, empty = FIELDS.every(k => !f[k].value.trim());
+  if (v.manual && !v.blob && empty){ await DB.del(v.id); renderRegister(); return; }
+  viewing = v; await saveFields(false); viewing = null;
+});
 // dernier scan lu, dans le panneau du scan : on voit tout de suite ce qui a été lu, un appui ouvre la fiche
 function showLast(r){
   const el = $('lastScan'), s = [label(r), r.fields && r.fields.lot && 'Lot ' + r.fields.lot].filter(Boolean).join(' · ');
   if (!s) return;
   el.textContent = t('last', { s }); el.classList.remove('hidden');
-  el.onclick = async () => { const rec = await DB.get(r.id); if (rec){ const u = URL.createObjectURL(rec.blob); urls.push(u); openScan(rec, u); } };
+  el.onclick = async () => { const rec = await DB.get(r.id); if (rec){ const u = rec.blob ? URL.createObjectURL(rec.blob) : ''; if (u) urls.push(u); openScan(rec, u); } };
 }
 $('btnReg2').onclick = () => openSheet('sheetRegister');
+// Ajout à la main, sans scan : une fiche vide, enregistrée tout de suite (marquée « saisie manuelle » ; « Scanner cette
+// fiole » peut lui ajouter une image plus tard). Une fiche laissée entièrement vide est supprimée à la fermeture.
+$('btnAdd').onclick = async () => {
+  const rec = { date: Date.now(), manual: true, read: true, fields: Object.fromEntries(FIELDS.map(k => [k, ''])) };
+  rec.id = await DB.add(rec); renderRegister(); openScan(rec, '');
+  setTimeout(() => $('fields').elements.marker.focus(), 50);
+};
 
 /* ---------- Export CSV et sauvegarde ---------- */
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
@@ -608,11 +634,11 @@ async function giveFile(blob, name){
 }
 $('btnCsv').onclick = async () => {
   const recs = await DB.all(); if (!recs.length){ toast(t('csvNone')); return; }
-  const cols = ['id', 'date', 'marker', 'fluorochrome', 'manufacturer', 'catalogue', 'lot', 'clone', 'expiry', 'gtin', 'code_2d', 'checked', 'incomplete_scan'];
+  const cols = ['id', 'date', 'marker', 'fluorochrome', 'manufacturer', 'catalogue', 'lot', 'clone', 'expiry', 'gtin', 'code_2d', 'checked', 'incomplete_scan', 'source'];
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const iso = d => { const x = new Date(d), p = n => String(n).padStart(2, '0'); return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())} ${p(x.getHours())}:${p(x.getMinutes())}`; };
   const rows = recs.map(r => { const f = r.fields || {};
-    return [r.id, iso(r.date), f.marker, f.fluor, f.maker, f.cat, f.lot, f.clone, f.exp, f.gtin, (r.code || []).join(' | '), isChecked(r) ? 'yes' : 'no', r.partial ? 'yes' : 'no'].map(q).join(','); });
+    return [r.id, iso(r.date), f.marker, f.fluor, f.maker, f.cat, f.lot, f.clone, f.exp, f.gtin, (r.code || []).join(' | '), isChecked(r) ? 'yes' : 'no', r.partial ? 'yes' : 'no', r.manual && !r.blob ? 'manual' : 'scan'].map(q).join(','); });
   // BOM : Excel ouvre alors le fichier en UTF-8 (µ, α, ®)
   const blob = new Blob(['﻿' + cols.join(',') + '\r\n' + rows.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
   await giveFile(blob, `antibodies_${stamp()}.csv`);
@@ -622,7 +648,7 @@ $('btnBackup').onclick = async () => {
   const recs = await DB.all(); if (!recs.length){ toast(t('csvNone')); return; }
   const out = [];
   for (const r of recs){
-    const c = await blobCanvas(r.blob), img = c.toDataURL('image/jpeg', .85);
+    const img = r.blob ? (await blobCanvas(r.blob)).toDataURL('image/jpeg', .85) : null;
     const { blob, ...rest } = r; out.push({ ...rest, image: img });
   }
   const blob = new Blob([JSON.stringify({ app: 'antibody-scanner', version: VERSION, date: Date.now(), scans: out })], { type: 'application/json' });
@@ -636,7 +662,7 @@ $('restoreFile').onchange = async e => {
     const have = new Set((await DB.all()).map(r => r.date)); let n = 0, d = 0;
     for (const sc of data.scans){
       if (have.has(sc.date)){ d++; continue; }   // déjà là (même instant de scan)
-      const { image, id, ...rest } = sc, blob = await (await fetch(image)).blob();
+      const { image, id, ...rest } = sc, blob = image ? await (await fetch(image)).blob() : null;
       await DB.add({ ...rest, blob }); n++;
     }
     toast(t('restored', { n, d })); renderRegister();
@@ -1044,7 +1070,8 @@ async function finish(){
     let id = null;
     if (rescanId !== null){   // rescanner : on remplace l'image du scan choisi, puis on relit
       const old = await DB.get(rescanId);
-      if (old){ id = old.id; await DB.put({ ...old, date: Date.now(), blob, w: canvas.width, h: canvas.height, junction, partial: false, fields: null, code: [], read: false, checked: false, edited: false }); toast(t('rescanDone')); }
+      // une saisie manuelle garde ses champs (la lecture ne remplira que les vides) ; un scan rescanné repart de zéro
+      if (old){ id = old.id; await DB.put({ ...old, date: Date.now(), blob, w: canvas.width, h: canvas.height, junction, partial: false, fields: old.manual ? old.fields : null, code: [], read: false, checked: old.manual ? old.checked : false, edited: false }); toast(t('rescanDone')); }
       rescanId = null;
     }
     if (id === null){ id = await DB.add({ date: Date.now(), blob, w: canvas.width, h: canvas.height, junction }); toast(junction ? t('saved') : t('savedNoJ')); }

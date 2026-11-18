@@ -113,6 +113,9 @@ Sur l'appareil, rien n'est envoyé : à la fin de chaque scan, en arrière-plan,
   e-mail) si possible, sinon téléchargement.
 - Sauvegarde : un .json avec champs + images en JPEG 0,85 (~60 Ko par scan) ; « Restaurer » ajoute les scans absents
   (même `date` = déjà là). `navigator.storage.persist()` demandé au démarrage ; la note dit si c'est accordé.
+- **Ajout à la main (v0.20)** : « + Ajouter à la main » crée une fiche sans image (`manual: true`, `blob` absent),
+  enregistrée tout de suite, supprimée si on la ferme vide. « Scanner cette fiole » lui ajoute une image (rescan) : les
+  valeurs tapées sont gardées, la lecture ne remplit que les champs vides. CSV : colonne `source` (scan / manual).
 - Sûreté : chaque scan est écrit dans IndexedDB dès la fin de la fiole. Au démarrage, les scans jamais lus (app fermée
   pendant la lecture) sont relus (`readPending`). Un plantage ne perd que la fiole en cours.
 - Aperçu caméra carré, centré (`object-fit: cover`, `videoBox` en mode cover) : le panneau récupère la place ; le cadre

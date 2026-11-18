@@ -1,6 +1,6 @@
 /* Service worker : rend l'app installable et utilisable hors ligne.
    Réseau d'abord (on récupère toujours la dernière version publiée), cache en secours. */
-const CACHE = 'antibody-scanner-v16';
+const CACHE = 'antibody-scanner-v17';
 const ASSETS = ['./', 'index.html', 'engine.js', 'reader.js', 'code-worker.js', 'mascot.js', 'fonts/ByteBounce.ttf', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'];
 
